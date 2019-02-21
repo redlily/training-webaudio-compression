@@ -1,18 +1,22 @@
+// サウンドエンコーダとデコーダの実装
+
+var wamCodec = wamCodec || {};
+
 (function () {
 
-    // マジックナンバー Web Audio Compression format 0
+    // マジックナンバー Web Audio compression Media format 0
     const MAGIC_NUMBER = ("W".charCodeAt(0) << 24) | ("A".charCodeAt(0) << 16) | ("M".charCodeAt(0) << 8) | "0".charCodeAt(0);
     // ファイルタイプ、 Simple Modified discrete cosine transform Data 0
     const FILE_TYPE_SMD0 = ("S".charCodeAt(0) << 24) | ("M".charCodeAt(0) << 16) | ("D".charCodeAt(0) << 8) | "0".charCodeAt(0);
-    // バージョン
+    // SMD0形式のバージョン
     const SMD0_VERSION = 0;
 
     // ヘッダオフセット、マジックナンバー
     const HEADER_OFFSET_MAGIC_NUMBER = 0;
-    // ヘッダオフセット、ファイルサイズ
+    // ヘッダオフセット、データサイズ
     const HEADER_OFFSET_DATA_SIZE = 4;
-    // ヘッダオフセット、ファイルタイプ、拡張用
-    const HEADER_OFFSET_FILE_TYPE = 8;
+    // ヘッダオフセット、データタイプ、拡張用
+    const HEADER_OFFSET_DATA_TYPE = 8;
     // ヘッダオフセット、バージョン
     const HEADER_OFFSET_VERSION = 12;
     // ヘッダオフセット、サンプリングレート
@@ -23,14 +27,14 @@
     const HEADER_OFFSET_SAMPLE_COUNT = 24;
     // ヘッダオフセット、周波数レンジ、2のべき乗の値を設定する必要がある
     const HEADER_OFFSET_FREQUENCY_RANGE = 28;
-    // ヘッダオフセット、周波数テーブルサイズ、8で割れる数を指定する必要がある
+    // ヘッダオフセット、周波数テーブルサイズ、32で割れる数を指定すると効率が良い
     const HEADER_OFFSET_FREQUENCY_TABLE_SIZE = 32;
     // ヘッダオフセット、フレーム数
     const HEADER_OFFSET_FRAME_COUNT = 36;
     // ヘッダオフセット、データ
     const HEADER_OFFSET_DATA = 40;
 
-    // フレームヘッダ、オフセット、波長スケール
+    // フレームヘッダ、オフセット、振幅スケール
     const FRAME_OFFSET_SCALE = 0;
     // フレームヘッダ、オフセット、データ
     const FRAME_OFFSET_DATA = 4;
@@ -54,7 +58,7 @@
     }
 
     // Web Audio Media エンコーダ
-    class WammEncoder {
+    class WamEncoder {
 
         constructor(sampleRate, channelSize, frequencyRange, frequencyTableSize) {
             this.sampleRate = sampleRate;
@@ -65,7 +69,7 @@
             this.data = new DataView(new ArrayBuffer(4096));
             this.data.setUint32(HEADER_OFFSET_MAGIC_NUMBER, MAGIC_NUMBER);
             this.data.setUint32(HEADER_OFFSET_DATA_SIZE, 0);
-            this.data.setUint32(HEADER_OFFSET_FILE_TYPE, FILE_TYPE_SMD0);
+            this.data.setUint32(HEADER_OFFSET_DATA_TYPE, FILE_TYPE_SMD0);
             this.data.setUint32(HEADER_OFFSET_VERSION, SMD0_VERSION);
             this.data.setUint32(HEADER_OFFSET_SAMPLE_RATE, this.sampleRate);
             this.data.setUint32(HEADER_OFFSET_CHANNEL_SIZE, this.channelSize);
@@ -120,15 +124,17 @@
         }
     }
 
+    wamCodec.WamEncoder = WamEncoder;
+
     // Web Audio Media デコーダ
-    class WammDecoder {
+    class WamDecoder {
 
         constructor(data) {
             this.data = new DataView(data);
 
             this.magicNumber = this.data.getUint32(HEADER_OFFSET_MAGIC_NUMBER);
             this.fileSize = this.data.getUint32(HEADER_OFFSET_DATA_SIZE);
-            this.fileType = this.data.getUint32(HEADER_OFFSET_FILE_TYPE);
+            this.fileType = this.data.getUint32(HEADER_OFFSET_DATA_TYPE);
             this.version = this.data.getUint32(HEADER_OFFSET_VERSION);
             this.sampleRate = this.data.getUint32(HEADER_OFFSET_SAMPLE_RATE);
             this.channelSize = this.data.getUint32(HEADER_OFFSET_CHANNEL_SIZE);
@@ -138,6 +144,8 @@
             this.frameCount = this.data.getUint32(HEADER_OFFSET_FRAME_COUNT);
 
             this.windowFunction = createWindowFunction(this.frequencyRange);
+            this.frequencyBuffer = new Float32Array(this.frequencyRange);
+            this.sampleBuffer = new Float32Array(this.frequencyRange << 1);
             this.prevOutputs = new Array(this.channelSize);
             for (let i = 0; i < this.channelSize; ++i) {
                 this.prevOutputs[i] = new Float32Array(this.frequencyRange);
@@ -148,6 +156,44 @@
         popFrame(sampleData) {
             for (let i = 0; i < this.channelSize; ++i) {
                 let samples = sampleData[i];
+
+                let offset = HEADER_OFFSET_DATA +
+                    (FRAME_OFFSET_DATA + (this.frequencyRange / 32) * 4 + this.frequencyTableSize) *
+                    this.channelSize * this.currentFrame * i;
+
+                // 振幅スケールを取得
+                let scale = this.data.getUint32(offset + FRAME_OFFSET_SCALE);
+
+                // 周波数フラグを取得
+                for (let j = 0; j < this.frequencyFlags.length; ++j) {
+                    this.frequencyFlags[j] = this.data.getUint32(offset);
+                    offset += 4;
+                }
+
+                // 周波数テーブルを取得
+                this.frequencyBuffer.fill(0);
+                for (let i = 0; i < this.frequencyRange; ++i) {
+                    if ((this.frequencyFlags[Math.floor(i / 32)] >> (i % 32)) & 0x1 != 0) {
+                        let value = this.data.getInt8(offset);
+                        this.frequencyBuffer[i] = -1 * ((value >> 7) & 0x1) * Math.pow(2, -(0x7f & value) / 16) * scale;
+                        offset += 1;
+                    }
+                }
+
+                // 逆MDCTをかける
+                FastMDCT.imdct(this.frequencyRange, this.sampleBuffer, this.frequencyBuffer);
+
+                // 窓関数をかける
+                for (let i = 0; i < this.frequencyRange; ++i) {
+                    this.sampleBuffer[i] *= this.windowFunction[i];
+                }
+
+                // 前回の後半の計算結果と今回の前半の計算結果をクロスフェードして出力
+                let prevOutput = this.prevOutputs[i];
+                for (let i = 0; i < this.frequencyRange << 1; ++i) {
+                    samples[i] = prevOutput[i] + this.sampleBuffer[i];
+                    prevOutput[i] = this.sampleBuffer[this.frequencyRange + i];
+                }
             }
             this.nextFrame();
         }
@@ -156,5 +202,7 @@
             this.currentFrame = (this.currentFrame + 1) % this.frameCount;
         }
     }
+
+    wamCodec.WamDcoder = WamDecoder;
 
 })();

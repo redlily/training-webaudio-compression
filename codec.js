@@ -51,9 +51,9 @@ var wamCodec = wamCodec || {};
     }
 
     // 窓関数をサンプルに適用する
-    function applyWindowFunction(n, samples, window) {
+    function applyWindowFunction(n, samples, windowFunction) {
         for (let i = 0; i < n; ++i) {
-            this.sampleBuffer[i] *= this.windowFunction[i];
+            samples[i] *= windowFunction[i];
         }
     }
 
@@ -143,7 +143,8 @@ var wamCodec = wamCodec || {};
             this.frequencyTableSize = this.data.getUint32(HEADER_OFFSET_FREQUENCY_TABLE_SIZE);
             this.frameCount = this.data.getUint32(HEADER_OFFSET_FRAME_COUNT);
 
-            this.windowFunction = createWindowFunction(this.frequencyRange);
+            this.windowFunction = createWindowFunction(this.frequencyRange << 1);
+            this.frequencyFlags = new Uint32Array(this.frequencyRange / 32);
             this.frequencyBuffer = new Float32Array(this.frequencyRange);
             this.sampleBuffer = new Float32Array(this.frequencyRange << 1);
             this.prevOutputs = new Array(this.channelSize);
@@ -159,12 +160,13 @@ var wamCodec = wamCodec || {};
 
                 let offset = HEADER_OFFSET_DATA +
                     (FRAME_OFFSET_DATA + (this.frequencyRange / 32) * 4 + this.frequencyTableSize) *
-                    this.channelSize * this.currentFrame * i;
+                    (this.channelSize * this.currentFrame + i);
 
                 // 振幅スケールを取得
                 let scale = this.data.getUint32(offset + FRAME_OFFSET_SCALE);
 
                 // 周波数フラグを取得
+                offset += FRAME_OFFSET_DATA;
                 for (let j = 0; j < this.frequencyFlags.length; ++j) {
                     this.frequencyFlags[j] = this.data.getUint32(offset);
                     offset += 4;
@@ -172,10 +174,12 @@ var wamCodec = wamCodec || {};
 
                 // 周波数テーブルを取得
                 this.frequencyBuffer.fill(0);
-                for (let i = 0; i < this.frequencyRange; ++i) {
-                    if ((this.frequencyFlags[Math.floor(i / 32)] >> (i % 32)) & 0x1 != 0) {
+                for (let j = 0; j < this.frequencyRange; ++j) {
+                    if ((this.frequencyFlags[Math.floor(j / 32)] >> j % 32) & 0x1 != 0) {
                         let value = this.data.getInt8(offset);
-                        this.frequencyBuffer[i] = -1 * ((value >> 7) & 0x1) * Math.pow(2, -(0x7f & value) / 16) * scale;
+                        let signed = (value >> 7);
+                        let volume = Math.pow(2, -(0x7f & value) / 16) * scale;
+                        this.frequencyBuffer[j] = signed == 0 ? volume : -volume;
                         offset += 1;
                     }
                 }
@@ -184,15 +188,13 @@ var wamCodec = wamCodec || {};
                 FastMDCT.imdct(this.frequencyRange, this.sampleBuffer, this.frequencyBuffer);
 
                 // 窓関数をかける
-                for (let i = 0; i < this.frequencyRange; ++i) {
-                    this.sampleBuffer[i] *= this.windowFunction[i];
-                }
+                applyWindowFunction(this.frequencyRange << 1, this.sampleBuffer, this.windowFunction);
 
                 // 前回の後半の計算結果と今回の前半の計算結果をクロスフェードして出力
                 let prevOutput = this.prevOutputs[i];
-                for (let i = 0; i < this.frequencyRange << 1; ++i) {
-                    samples[i] = prevOutput[i] + this.sampleBuffer[i];
-                    prevOutput[i] = this.sampleBuffer[this.frequencyRange + i];
+                for (let j = 0; j < this.frequencyRange; ++j) {
+                    samples[j] = prevOutput[j] + this.sampleBuffer[j] / ((1 << 15) - 1);
+                    prevOutput[j] = this.sampleBuffer[this.frequencyRange + j] / ((1 << 15) - 1);
                 }
             }
             this.nextFrame();

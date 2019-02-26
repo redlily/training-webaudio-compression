@@ -56,6 +56,7 @@
                         enc.writeFrame(sampleData, 1024 * k, Math.min(1024, sampleCount - 1024 * (k + 1)));
                     }
                     let buf = enc.getDataBuffer();
+                    console.log(buf.byteLength);
 
                     let dec = new wamCodec.WamDcoder(buf);
                     audioProcessor = audioContext.createScriptProcessor(4096, 2, 2);
@@ -69,10 +70,10 @@
                         }
                     };
 
-                    let blob = new Blob(new Uint8Array(4).buffer, {type: "application/octet-binary"});
-                    let a = document.getElementById("download");
-                    a.href = window.URL.createObjectURL(blob);
-                    a.download = "test.wac";
+                    // let blob = new Blob(new Uint8Array(buf), {type: "application/octet-binary"});
+                    // let a = document.getElementById("download");
+                    // a.href = window.URL.createObjectURL(blob);
+                    // a.download = "test.wac";
                 });
             };
         });

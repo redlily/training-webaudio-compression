@@ -115,7 +115,7 @@ var wamCodec = wamCodec || {};
                 let input = inputData[i];
 
                 let dataOffset = HEADER_OFFSET_DATA +
-                    (FRAME_OFFSET_DATA + (this.frequencyRange / 32) * 4 + this.frequencyTableSize) *
+                    (FRAME_OFFSET_DATA + (this.frequencyRange / 32) * 4 + (this.frequencyTableSize >> 1)) *
                     (this.channelSize * (this.frameCount - 1) + i);
 
                 // 前回の入力を処理バッファの前半に充填
@@ -145,26 +145,12 @@ var wamCodec = wamCodec || {};
                 let scale = 1;
                 for (let j = 0; j < this.frequencyRange; ++j) {
                     let value = Math.abs(this.frequencies[j]);
-                    this.frequencyPowers[j] = value / scale >= 1 / (1 << 8) ? value ** 0.5 : 0;
+                    this.frequencyPowers[j] = value / scale >= 1 / Math.pow(2.5, 7) ? value ** 0.5 : 0;
                     if (value > scale) {
                         scale = value;
                     }
                 }
                 this.data.setUint32(dataOffset + FRAME_OFFSET_SCALE, scale);
-
-                // 振幅スケールを書き出し
-                let scales = new Float32Array(Math.log2(this.frequencyRange));
-                for (let j = 0; j < scales.length; ++j) {
-                    let scale = 1;
-                    for (let k = (1 << j) >> 1; k < 1 << j; ++k) {
-                        let value = Math.abs(this.frequencies[j]);
-                        this.frequencyPowers[j] = value / scale >= 1 / (1 << 8) ? value ** 0.5 : 0;
-                        if (value > scale) {
-                            scale = value;
-                        }
-                    }
-                    scales[j] = scale
-                }
 
                 // 書き出す周波数を選択
                 this.frequencyFlags.fill(0);
@@ -210,20 +196,20 @@ var wamCodec = wamCodec || {};
                 }
 
                 // 周波数フラグを書き出し
+                let nums = new Uint32Array(8);
                 let frequencyOffset = 0;
                 for (let j = 0; j < this.frequencyRange; ++j) {
                     if ((this.frequencyFlags[Math.floor(j / 32)] >> (j % 32)) & 0x1 != 0) {
-                        let offset = dataOffset + (frequencyOffset);
+                        let offset = dataOffset + (frequencyOffset >> 1);
                         let value = this.frequencies[j] / scale;
                         let signed = value >= 0 ? 0x0 : 0x8;
-                        let power = 0x7 & Math.ceil(Math.min(-Math.log2(Math.abs(value)), 7));
-                        if (0x & frequencyOffset == 0) {
+                        let power = 0x7 & Math.ceil(Math.min(-Math.log(Math.abs(value)) / Math.log(2.5), 7));
+                        if ((0x1 & frequencyOffset) == 0) {
                             this.data.setUint8(offset, signed | power);
                         } else {
-                            let low = (0xf & this.data.getUint8(offset));
-                            let high = signed | power;
-                            this.data.setUint8(offset, high << 4);
+                            this.data.setUint8(offset, this.data.getUint8(offset) | ((signed | power) << 4));
                         }
+                        nums[power] += 1;
                         frequencyOffset += 1;
                     }
                 }
@@ -232,7 +218,7 @@ var wamCodec = wamCodec || {};
                 for (let j = 0; j < this.frequencyRange; ++j) {
                     str += (this.frequencyFlags[Math.floor(j / 32)] >> (j % 32)) & 0x1;
                 }
-                console.log(str);
+                console.log(nums);
             }
         }
 
@@ -247,7 +233,7 @@ var wamCodec = wamCodec || {};
 
         getDataSize() {
             return HEADER_OFFSET_DATA +
-                (FRAME_OFFSET_DATA + (this.frequencyRange / 32) * 4 + this.frequencyTableSize) *
+                (FRAME_OFFSET_DATA + (this.frequencyRange / 32) * 4 + (this.frequencyTableSize >> 1)) *
                 this.channelSize * this.frameCount;
         }
 
@@ -300,12 +286,12 @@ var wamCodec = wamCodec || {};
             this.currentFrame = 0;
         }
 
-        readFrame(outputData, start = 0, length = 0) {
+        readFrame(outputData, start = 0, length = this.frequencyRange) {
             for (let i = 0; i < this.channelSize; ++i) {
                 let output = outputData[i];
 
                 let dataOffset = HEADER_OFFSET_DATA +
-                    (FRAME_OFFSET_DATA + (this.frequencyRange / 32) * 4 + this.frequencyTableSize) *
+                    (FRAME_OFFSET_DATA + (this.frequencyRange / 32) * 4 + (this.frequencyTableSize >> 1)) *
                     (this.channelSize * this.currentFrame + i);
 
                 // 振幅スケールを取得
@@ -323,10 +309,10 @@ var wamCodec = wamCodec || {};
                 let frequencyOffset = 0;
                 for (let j = 0; j < this.frequencyRange; ++j) {
                     if ((this.frequencyFlags[Math.floor(j / 32)] >> j % 32) & 0x1 != 0) {
-                        let offset = dataOffset + (frequencyOffset);
-                        let value = (0x & frequencyOffset == 0 ? 0xf & this.data.getUint8(offset) : 0xf & (this.data.getUint8(offset) >> 4));
+                        let offset = dataOffset + (frequencyOffset >> 1);
+                        let value = ((0x1 & frequencyOffset) == 0 ? 0xf & this.data.getUint8(offset) : 0xf & (this.data.getUint8(offset) >> 4));
                         let signed = 0x8 & value;
-                        let power = Math.pow(2, -(0x7 & value)) * scale;
+                        let power = Math.pow(2.5, -(0x7 & value)) * scale;
                         this.frequencies[j] = signed == 0 ? power : -power;
                         frequencyOffset += 1;
                     }
@@ -340,8 +326,11 @@ var wamCodec = wamCodec || {};
 
                 // 前回の後半の計算結果と今回の前半の計算結果をクロスフェードして出力
                 let prevOutput = this.prevOutputs[i];
-                for (let j = 0; j < this.frequencyRange; ++j) {
+                for (let j = 0; j < length; ++j) {
                     output[start + j] = prevOutput[j] + this.samples[j] / ((1 << 16) - 1); // 16bitの数値を[-1, 1]の数値にスケール
+                    prevOutput[j] = this.samples[this.frequencyRange + j] / ((1 << 16) - 1);
+                }
+                for (let j = length; j < this.frequencyRange; ++j) {
                     prevOutput[j] = this.samples[this.frequencyRange + j] / ((1 << 16) - 1);
                 }
             }

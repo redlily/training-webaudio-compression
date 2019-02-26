@@ -47,16 +47,15 @@
                     let channelSize = audioBuf.numberOfChannels;
                     let sampleCount = audioBuf.length;
 
-                    let enc = new wamCodec.WamEncoder(sampleRate, channelSize, 512, 128, sampleCount);
+                    let enc = new wamCodec.WamEncoder(sampleRate, channelSize, 1024, 256, sampleCount);
                     let sampleData = new Array(channelSize);
                     for (let k = 0; k < sampleData.length; ++k) {
                         sampleData[k] = audioBuf.getChannelData(k);
                     }
-                    for (let k = 0; k < (sampleCount / 512) - 1; ++k) {
-                        enc.writeFrame(sampleData, 512 * k, Math.min(512, sampleCount - 512 * (k + 1)));
+                    for (let k = 0; k < (sampleCount / 1024) - 1; ++k) {
+                        enc.writeFrame(sampleData, 1024 * k, Math.min(1024, sampleCount - 1024 * (k + 1)));
                     }
                     let buf = enc.getDataBuffer();
-
 
                     let dec = new wamCodec.WamDcoder(buf);
                     audioProcessor = audioContext.createScriptProcessor(4096, 2, 2);

@@ -145,12 +145,26 @@ var wamCodec = wamCodec || {};
                 let scale = 1;
                 for (let j = 0; j < this.frequencyRange; ++j) {
                     let value = Math.abs(this.frequencies[j]);
-                    this.frequencyPowers[j] = value;
+                    this.frequencyPowers[j] = value / scale >= 1 / (1 << 8) ? value ** 0.5 : 0;
                     if (value > scale) {
                         scale = value;
                     }
                 }
                 this.data.setUint32(dataOffset + FRAME_OFFSET_SCALE, scale);
+
+                // 振幅スケールを書き出し
+                let scales = new Float32Array(Math.log2(this.frequencyRange));
+                for (let j = 0; j < scales.length; ++j) {
+                    let scale = 1;
+                    for (let k = (1 << j) >> 1; k < 1 << j; ++k) {
+                        let value = Math.abs(this.frequencies[j]);
+                        this.frequencyPowers[j] = value / scale >= 1 / (1 << 8) ? value ** 0.5 : 0;
+                        if (value > scale) {
+                            scale = value;
+                        }
+                    }
+                    scales[j] = scale
+                }
 
                 // 書き出す周波数を選択
                 this.frequencyFlags.fill(0);
@@ -166,25 +180,24 @@ var wamCodec = wamCodec || {};
 
                     let sum = 0;
                     let maxIndex = 0;
-                    let maxPower = this.frequencyPowers[0];
-                    for (let j = 0; j < this.frequencyRange && writeCount < this.frequencyTableSize; ++j) {
+                    let maxPower = this.frequencyPowers[this.frequencyRange - 1];
+                    for (let j = this.frequencyRange - 1; j >= 0 && writeCount < this.frequencyTableSize; --j) {
                         let power = this.frequencyPowers[j];
-
-                        if ((sum + power) > sumPower / this.frequencyTableSize) {
-                            this.frequencyFlags[Math.floor(maxIndex / 32)] |= 1 << (maxIndex % 32);
-                            this.frequencyPowers[maxIndex] = 0;
-                            writeCount++;
-
-                            sum = 0;
-                            maxIndex = j + 1;
-                            maxPower = this.frequencyPowers[j + 1];
-                        }
-
                         sum += power;
 
                         if (power > maxPower) {
                             maxPower = power;
                             maxIndex = j;
+                        }
+
+                        if (sum >= sumPower / this.frequencyTableSize) {
+                            this.frequencyFlags[Math.floor(maxIndex / 32)] |= 1 << (maxIndex % 32);
+                            this.frequencyPowers[maxIndex] = 0;
+                            writeCount++;
+
+                            sum = 0;
+                            maxIndex = j - 1;
+                            maxPower = this.frequencyPowers[j - 1];
                         }
                     }
                 }
@@ -196,23 +209,30 @@ var wamCodec = wamCodec || {};
                     dataOffset += 4;
                 }
 
-                let str = "";
+                // 周波数フラグを書き出し
+                let frequencyOffset = 0;
+                for (let j = 0; j < this.frequencyRange; ++j) {
+                    if ((this.frequencyFlags[Math.floor(j / 32)] >> (j % 32)) & 0x1 != 0) {
+                        let offset = dataOffset + (frequencyOffset);
+                        let value = this.frequencies[j] / scale;
+                        let signed = value >= 0 ? 0x0 : 0x8;
+                        let power = 0x7 & Math.ceil(Math.min(-Math.log2(Math.abs(value)), 7));
+                        if (0x & frequencyOffset == 0) {
+                            this.data.setUint8(offset, signed | power);
+                        } else {
+                            let low = (0xf & this.data.getUint8(offset));
+                            let high = signed | power;
+                            this.data.setUint8(offset, high << 4);
+                        }
+                        frequencyOffset += 1;
+                    }
+                }
+
+                let str = writeCount + " ";
                 for (let j = 0; j < this.frequencyRange; ++j) {
                     str += (this.frequencyFlags[Math.floor(j / 32)] >> (j % 32)) & 0x1;
                 }
                 console.log(str);
-
-                // 周波数フラグを書き出し
-                for (let j = 0; j < this.frequencyRange; ++j) {
-                    if ((this.frequencyFlags[Math.floor(j / 32)] >> (j % 32)) & 0x1 != 0) {
-                        let value = this.frequencies[j] / scale;
-                        this.data.setInt8(
-                            dataOffset,
-                            (value >= 0 ? 0x00 : 0x80) |
-                            (0x7f & Math.floor(Math.min(16 * -Math.log2(Math.abs(value)), 127))));
-                        dataOffset += 1;
-                    }
-                }
             }
         }
 
@@ -300,13 +320,15 @@ var wamCodec = wamCodec || {};
 
                 // 周波数テーブルを取得
                 this.frequencies.fill(0);
+                let frequencyOffset = 0;
                 for (let j = 0; j < this.frequencyRange; ++j) {
                     if ((this.frequencyFlags[Math.floor(j / 32)] >> j % 32) & 0x1 != 0) {
-                        let value = this.data.getInt8(dataOffset);
-                        let signed = (value >> 7);
-                        let volume = Math.pow(2, -(0x7f & value) / 16) * scale;
-                        this.frequencies[j] = signed == 0 ? volume : -volume;
-                        dataOffset += 1;
+                        let offset = dataOffset + (frequencyOffset);
+                        let value = (0x & frequencyOffset == 0 ? 0xf & this.data.getUint8(offset) : 0xf & (this.data.getUint8(offset) >> 4));
+                        let signed = 0x8 & value;
+                        let power = Math.pow(2, -(0x7 & value)) * scale;
+                        this.frequencies[j] = signed == 0 ? power : -power;
+                        frequencyOffset += 1;
                     }
                 }
 

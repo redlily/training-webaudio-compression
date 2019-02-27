@@ -272,11 +272,6 @@ class FastMDCT {
             frequencies[j] -= frequencies[i];
         }
 
-        // スケーリング
-        for (let i = 0; i < n; ++i) {
-            frequencies[i] /= n;
-        }
-
         // データを分離
         let ns1 = n - 1;            // n - 1
         let nd2 = n >> 1;           // n / 2

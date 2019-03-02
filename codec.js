@@ -36,35 +36,19 @@ var wamCodec = wamCodec || {};
     // ヘッダオフセット、データ
     const HEADER_OFFSET_DATA = 40;
 
-    // フレームヘッダ、オフセット、振幅スケール
-    const FRAME_OFFSET_VOLUME = 0;
+    // フレームヘッダ、オフセット、振幅のメインスケール
+    const FRAME_OFFSET_MASTER_SCALE = 0;
+    // フーレムヘッダ、オフセット、振幅のサブスケール、4bitで8つのメインスケールからのスケール値を対数で保持する
+    const FRAME_OFFSET_SUB_SCALE = 4;
     // フレームヘッダ、オフセット、データ
-    const FRAME_OFFSET_DATA = 4;
+    const FRAME_OFFSET_DATA = 8;
 
     // 対数による量子化で使用する対数の底
-    const BASE_OF_LOG = 2;
+    const BASE_OF_LOGARITHM = 2;
 
     // アサート
     function assert(test, message) {
         if (!test) throw new Error(message || "Failed to test.");
-    }
-
-    // 窓関数となる配列を生成、窓の種類はVorbis窓
-    function createWindowFunction(num) {
-        let windowFunction = new Float32Array(num);
-        for (let i = 0; i < num >>> 1; ++i) {
-            let value = Math.sin(Math.PI / 2 * Math.pow(Math.sin(Math.PI * (i / (num - 1))), 2));
-            windowFunction[i] = value;
-            windowFunction[num - 1 - i] = value;
-        }
-        return windowFunction;
-    }
-
-    // 窓関数をサンプルに適用する
-    function applyWindowFunction(num, samples, windowFunction) {
-        for (let i = 0; i < num; ++i) {
-            samples[i] *= windowFunction[i];
-        }
     }
 
     // Web Audio Media コーダ
@@ -75,24 +59,42 @@ var wamCodec = wamCodec || {};
             this.channelSize = 0;
             this.frequencyRange = 0;
             this.frequencyTableSize = 0;
-            this.subScales = 0;
+            this.subScales = null;
+            this.windowFunction = null;
+            this.samples = null;
         }
 
-        readHalfByte(offset, index) {
+        readHalfUbyte(offset, index) {
             return 0xf & (this.data.getUint8(offset) >>> (index << 2));
         }
 
-        writeHalfByte(offset, index, value) {
+        writeHalfUbyte(offset, index, value) {
             this.data.setUint8(
                 offset,
                 (0xff & (this.data.getUint8(offset) & ~(0xf << (index << 2)))) | ((0xf & value) << (index << 2)));
         }
 
+        // 窓関数となる配列を生成、窓の種類はVorbis窓
+        setupWindowFunction() {
+            this.windowFunction = new Float32Array(this.frequencyRange << 1);
+            for (let i = 0; i < this.frequencyRange; ++i) {
+                let value = Math.sin(Math.PI / 2 * Math.pow(Math.sin(Math.PI * (i / ((this.frequencyRange << 1) - 1))), 2));
+                this.windowFunction[i] = value;
+                this.windowFunction[(this.frequencyRange << 1) - 1 - i] = value;
+            }
+        }
+
+        // 窓関数をサンプルに適用する
+        applyWindowFunction() {
+            for (let i = 0; i < this.frequencyRange << 1; ++i) {
+                this.samples[i] *= this.windowFunction[i];
+            }
+        }
+
         getDataOffset(frame, channel) {
             return HEADER_OFFSET_DATA +
                 (FRAME_OFFSET_DATA +
-                    Math.ceil(this.subScales.length / 2) +
-                    (this.frequencyRange / 32) * 4 +
+                    this.frequencyRange / 8 +
                     (this.frequencyTableSize >>> 1)) *
                 (this.channelSize * frame + channel);
         }
@@ -131,8 +133,10 @@ var wamCodec = wamCodec || {};
             this.data.setUint32(HEADER_OFFSET_FREQUENCY_TABLE_SIZE, this.frequencyTableSize);
             this.data.setUint32(HEADER_OFFSET_FRAME_COUNT, 0);
 
-            this.windowFunction = createWindowFunction(this.frequencyRange << 1);
-            this.subScales = new Float32Array(Math.round(Math.log2(this.frequencyRange)) - 3);
+            this.setupWindowFunction();
+
+            this.subScales = new Uint8Array(8);
+            this.subScaleStart = 1 << Math.max(Math.log2(this.frequencyRange) - 8, 1);
             this.frequencyFlags = new Uint32Array(this.frequencyRange / 32);
             this.frequencies = new Float32Array(this.frequencyRange);
             this.frequencyPowers = new Float32Array(this.frequencyRange);
@@ -171,7 +175,7 @@ var wamCodec = wamCodec || {};
                 }
 
                 // 窓関数をかける
-                applyWindowFunction(this.frequencyRange << 1, this.samples, this.windowFunction);
+                this.applyWindowFunction();
 
                 // MDCTをかける
                 FastMDCT.mdct(this.frequencyRange, this.samples, this.frequencies);
@@ -184,23 +188,29 @@ var wamCodec = wamCodec || {};
                         masterScale = power;
                     }
                 }
-                this.data.setUint32(dataOffset + FRAME_OFFSET_VOLUME, masterScale);
+                this.data.setUint32(dataOffset + FRAME_OFFSET_MASTER_SCALE, masterScale);
 
                 // 振幅のサブスケールを書き出す
                 for (let j = 0; j < this.subScales.length; ++j) {
                     let subScale = 1;
-                    for (let k = 1 << 4 + (j - 1); k < 1 << 4 << j; ++k) {
+                    for (let k = this.subScaleStart << (j - 1); k < this.subScaleStart << j && k < this.frequencyRange; ++k) {
                         let power = Math.abs(this.frequencies[k]);
                         if (power > subScale) {
                             subScale = power;
                         }
                     }
+                    let power = Math.floor(Math.min(-Math.log(subScale / masterScale) / Math.log(BASE_OF_LOGARITHM) * 2, 15));
+                    this.subScales[j] = power;
+                    this.writeHalfUbyte(dataOffset + FRAME_OFFSET_SUB_SCALE + (j >>> 1), 0x1 & j, power);
                 }
 
                 // 各周波数のパワーを計算しておく
-                for (let j = 0; j < this.frequencyRange; ++j) {
-                    let power = Math.abs(this.frequencies[j]) / masterScale;
-                    this.frequencyPowers[j] = power > 1 / Math.pow(2, 7) ? power : 0;
+                for (let j = 0; j < this.subScales.length; ++j) {
+                    let subScale = this.subScales[j];
+                    for (let k = this.subScaleStart << (j - 1); k < this.subScaleStart << j && k < this.frequencyRange; ++k) {
+                        let power = Math.abs(this.frequencies[k]) / masterScale;
+                        this.frequencyPowers[k] = power > Math.pow(BASE_OF_LOGARITHM, -7 - subScale * 0.5) ? power : 0;
+                    }
                 }
 
                 // 書き出す周波数を選択
@@ -249,13 +259,13 @@ var wamCodec = wamCodec || {};
                 // 周波数フラグを書き出し
                 let frequencyOffset = 0;
                 for (let j = 0; j < this.subScales.length; ++j) {
-                    for (let k = 1 << 4 << (j - 1); k < 1 << 4 << j; ++k) {
+                    let subScale = this.subScales[j];
+                    for (let k = this.subScaleStart << (j - 1); k < this.subScaleStart << j && k < this.frequencyRange; ++k) {
                         if ((this.frequencyFlags[Math.floor(k / 32)] >>> (k % 32)) & 0x1 != 0) {
-                            let value = this.frequencies[k] / masterScale;
+                            let value = this.frequencies[k] / (masterScale * Math.pow(BASE_OF_LOGARITHM, -subScale * 0.5));
                             let signed = value >= 0 ? 0x0 : 0x8;
-                            let power =
-                                0x7 & Math.floor(Math.min(-Math.log(Math.abs(value)) / Math.log(BASE_OF_LOG), 7));
-                            this.writeHalfByte(
+                            let power = Math.ceil(Math.min(-Math.log(Math.abs(value)) / Math.log(BASE_OF_LOGARITHM), 7));
+                            this.writeHalfUbyte(
                                 dataOffset + (frequencyOffset >>> 1),
                                 0x1 & frequencyOffset,
                                 signed | power);
@@ -263,15 +273,6 @@ var wamCodec = wamCodec || {};
                         }
                     }
                 }
-
-                let str = writeCount + " " + masterScale + " ";
-                for (let j = 0; j < this.frequencyRange; ++j) {
-                    //str += (this.frequencyFlags[Math.floor(j / 32)] >> (j % 32)) & 0x1;
-                    str += Math.floor(Math.min(
-                        -Math.log(Math.abs(this.frequencies[j] / masterScale)) / Math.log(BASE_OF_LOG),
-                        9));
-                }
-                console.log(str);
             }
             this.sampleCount += length;
         }
@@ -307,7 +308,6 @@ var wamCodec = wamCodec || {};
             super();
 
             this.data = new DataView(data);
-
             this.magicNumber = this.data.getUint32(HEADER_OFFSET_MAGIC_NUMBER);
             this.fileSize = this.data.getUint32(HEADER_OFFSET_DATA_SIZE);
             this.fileType = this.data.getUint32(HEADER_OFFSET_DATA_TYPE);
@@ -329,8 +329,10 @@ var wamCodec = wamCodec || {};
             assert(this.frequencyRange > 0);
             assert(this.frequencyTableSize > 0);
 
-            this.windowFunction = createWindowFunction(this.frequencyRange << 1);
-            this.subScales = new Float32Array(Math.round(Math.log2(this.frequencyRange)) - 3);
+            this.setupWindowFunction();
+
+            this.subScales = new Uint8Array(8);
+            this.subScaleStart = 1 << Math.max(Math.log2(this.frequencyRange) - 8, 0);
             this.frequencyFlags = new Uint32Array(this.frequencyRange / 32);
             this.frequencies = new Float32Array(this.frequencyRange);
             this.samples = new Float32Array(this.frequencyRange << 1);
@@ -347,9 +349,12 @@ var wamCodec = wamCodec || {};
                 let dataOffset = this.getDataOffset(this.currentFrame, i);
 
                 // 振幅のマスタボリュームを取得
-                let masterVolume = this.data.getUint32(dataOffset + FRAME_OFFSET_VOLUME);
+                let masterVolume = this.data.getUint32(dataOffset + FRAME_OFFSET_MASTER_SCALE);
 
                 // 振幅のサブスケールを取得
+                for (let j = 0; j < this.subScales.length; ++j) {
+                    this.subScales[j] = this.readHalfUbyte(dataOffset + FRAME_OFFSET_SUB_SCALE + (j >>> 1), 0x1 & j);
+                }
 
                 // 周波数フラグを取得
                 dataOffset += FRAME_OFFSET_DATA;
@@ -363,11 +368,11 @@ var wamCodec = wamCodec || {};
                 let frequencyOffset = 0;
                 for (let j = 0; j < this.subScales.length; ++j) {
                     let subScale = this.subScales[j];
-                    for (let k = 1 << 4 << (j - 1); k < 1 << 4 << j; ++k) {
+                    for (let k = this.subScaleStart << (j - 1); k < this.subScaleStart << j && k < this.frequencyRange; ++k) {
                         if ((this.frequencyFlags[Math.floor(k / 32)] >>> k % 32) & 0x1 != 0) {
-                            let value = this.readHalfByte(dataOffset + (frequencyOffset >>> 1), 0x1 & frequencyOffset);
+                            let value = this.readHalfUbyte(dataOffset + (frequencyOffset >>> 1), 0x1 & frequencyOffset);
                             let signed = 0x8 & value;
-                            let power = Math.pow(BASE_OF_LOG, -(0x7 & value) - subScale) * masterVolume;
+                            let power = Math.pow(BASE_OF_LOGARITHM, -(0x7 & value) - subScale * 0.5) * masterVolume;
                             this.frequencies[k] = signed == 0 ? power : -power;
                             frequencyOffset += 1;
                         }
@@ -378,7 +383,7 @@ var wamCodec = wamCodec || {};
                 FastMDCT.imdct(this.frequencyRange, this.samples, this.frequencies);
 
                 // 窓関数をかける
-                applyWindowFunction(this.frequencyRange << 1, this.samples, this.windowFunction);
+                this.applyWindowFunction();
 
                 // 前回の後半の計算結果と今回の前半の計算結果をクロスフェードして出力
                 let prevOutput = this.prevOutputs[i];

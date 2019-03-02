@@ -264,7 +264,7 @@ class FastMDCT {
     // frequencies - n個の周波数配列、この配列が変換処理の入力元となる
     static imdct(n, samples, frequencies) {
         // TODO 入力元である周波数配列を破壊してしまうので作業用バッファを用いるか、破壊して良い出力先のsamplesを作業用バッファとして用いる
-        
+
         // cos値の変換用係数を掛け合わせ
         let rad = Math.PI / (n << 2);
         for (let i = 0; i < n; ++i) {
@@ -286,8 +286,8 @@ class FastMDCT {
         }
 
         // スケーリング
-        for (let i = 0; i < n; ++i) {
-            frequencies[i] /= n;
+        for (let j = 0; j < n; ++j) {
+            frequencies[j] /= n;
         }
 
         // データを分離

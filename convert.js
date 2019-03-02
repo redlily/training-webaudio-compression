@@ -47,7 +47,7 @@
                     let channelSize = audioBuf.numberOfChannels;
                     let sampleCount = audioBuf.length;
 
-                    let enc = new wamCodec.WamEncoder(sampleRate, channelSize, 1024, 256, sampleCount);
+                    let enc = new wamCodec.WamEncoder(sampleRate, channelSize, 1024, 192, sampleCount);
                     let sampleData = new Array(channelSize);
                     for (let k = 0; k < sampleData.length; ++k) {
                         sampleData[k] = audioBuf.getChannelData(k);

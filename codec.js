@@ -249,14 +249,14 @@ var wamCodec = wamCodec || {};
                     }
                 }
 
-                // 周波数テーブルを書き出し
+                // 周波数フラグを書き出し
                 dataOffset += FRAME_OFFSET_DATA;
                 for (let j = 0; j < this.frequencyFlags.length; ++j) {
                     this.data.setUint32(dataOffset, this.frequencyFlags[j]);
                     dataOffset += 4;
                 }
 
-                // 周波数フラグを書き出し
+                // 周波数テーブルを書き出し
                 let frequencyOffset = 0;
                 for (let j = 0; j < this.subScales.length; ++j) {
                     let subScale = this.subScales[j];

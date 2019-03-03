@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>圧縮テスト</title>
+    <script type="text/javascript" src="signal.js"></script>
+    <script type="text/javascript" src="codec.js"></script>
+    <script type="text/javascript" src="main.js"></script>
+    <style type="text/css">
+        table {
+            border: 0
+        }
+
+        td {
+            padding: 5px
+        }
+    </style>
+</head>
+<body>
+
+<table>
+    <tr>
+        <td>
+            入力ファイル
+        </td>
+        <td>
+            <input id="openFileButton" type="file">
+        </td>
+    </tr>
+    <tr>
+        <td colspan="2">
+            <hr>
+        </td>
+    </tr>
+
+    <!-- 圧縮オプション -->
+    <tr>
+        <td>
+            チャネル数
+        </td>
+        <td>
+            <label>
+                <select id="channelCount">
+                    <option value="1">モノラル</option>
+                    <option value="2" selected>ステレオ</option>
+                </select>
+            </label>
+        </td>
+    </tr>
+    <tr>
+        <td>
+            サンプリングレート
+        </td>
+        <td>
+            <label>
+                <select id="sampleRate">
+                    <option value="8000">8000Hz</option>
+                    <option value="16000">16000Hz</option>
+                    <option value="22050">22050Hz</option>
+                    <option value="24000">24000Hz</option>
+                    <option value="44100" selected>44100Hz</option>
+                    <option value="48000">48000Hz</option>
+                </select>
+            </label>
+        </td>
+    </tr>
+    <tr>
+        <td>
+            処理ブロックサイズ
+        </td>
+        <td>
+            <label>
+                <select id="frequencyRange">
+                    <option value="256">256</option>
+                    <option value="512">512</option>
+                    <option value="1024" selected>1024</option>
+                    <option value="2048">2048</option>
+                    <option value="4096">4096</option>
+                </select>
+            </label>
+        </td>
+    </tr>
+    <tr>
+        <td>
+            周波数テーブルサイズ
+        </td>
+        <td>
+            <label>
+                <select id="frequencyTableSize">
+                    <option value="6">6.25%</option>
+                    <option value="5">9.375%</option>
+                    <option value="4">12.5%</option>
+                    <option value="3" selected>18.75%</option>
+                    <option value="2">25%</option>
+                    <option value="1">50%</option>
+                </select>
+            </label>
+        </td>
+    </tr>
+    <tr>
+        <td>
+            圧縮後サイズ
+        </td>
+        <td id="compressedSize">
+            N/S
+        </td>
+    </tr>
+    <tr>
+        <td colspan="2">
+            <hr>
+        </td>
+    </tr>
+
+    <!-- 圧縮関連 -->
+    <tr>
+        <td>
+        </td>
+        <td>
+            <input id="compressButton" type="button" value="圧縮">
+        </td>
+    </tr>
+    <tr>
+        <td>
+            圧縮処理の進捗
+        </td>
+        <td id="encodingRate">
+            0%
+        </td>
+    </tr>
+    <tr>
+        <td colspan="2">
+            <hr>
+        </td>
+    </tr>
+
+    <!-- 再生関連 -->
+    <tr>
+        <td>
+        </td>
+        <td>
+            <input id="playButton" type="button" value="再生">
+        </td>
+    </tr>
+    <tr>
+        <td>
+        </td>
+        <td>
+            <a id="downloadButton" href="">ダウンロード</a>
+        </td>
+    </tr>
+</table>
+
+</body>
+</html>

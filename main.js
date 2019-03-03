@@ -1,12 +1,15 @@
 (function () {
 
+
+
+
     onload = function () {
 
         let audioContext = null;
         let audioSource = null;
         let audioProcessor = null;
 
-        let fileSelector = document.getElementById("fileSelector");
+        let fileSelector = document.getElementById("openFileButton");
         let playButton = document.getElementById("playButton");
 
         playButton.addEventListener("click", function (event) {

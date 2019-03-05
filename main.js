@@ -5,7 +5,7 @@
     // チャネル数選択
     let channelCountSelector;
     // サンプルレート選択
-    let sampleRateSeletor;
+    let sampleRateSelector;
     // 周波数レンジ選択
     let frequencyRangeSelector;
     // 周波数テーブル選択
@@ -25,15 +25,15 @@
         openFileButton.addEventListener("change", onChangedSourceFile);
         channelCountSelector = document.getElementById("channelCountSelector");
         channelCountSelector.addEventListener("change", onChangedChannelCount);
-        sampleRateSeletor = document.getElementById("sampleRateSelector");
-        sampleRateSeletor.addEventListener("change", onChangedSampleRate);
+        sampleRateSelector = document.getElementById("sampleRateSelector");
+        sampleRateSelector.addEventListener("change", onChangedSampleRate);
         frequencyRangeSelector = document.getElementById("frequencyRangeSelector");
         frequencyRangeSelector.addEventListener("change", onChangedFrequencyRange);
         frequencyTableSizeSelector = document.getElementById("frequencyTableSizeSelector");
         frequencyTableSizeSelector.addEventListener("change", onChangedFrequencyTableSize);
         compressButton = document.getElementById("compressButton");
         compressButton.addEventListener("click", onClickedCompressButton);
-        //compressButton.disabled = "disabled";
+        compressButton.disabled = "disabled";
         playButton = document.getElementById("playButton");
         playButton.addEventListener("click", onClickedPlayButton);
         downloadButton = document.getElementById("downloadButton");
@@ -43,7 +43,7 @@
     function terminateUI() {
         openFileButton.removeEventListener("change", onChangedSourceFile);
         channelCountSelector.removeEventListener("change", onChangedChannelCount);
-        sampleRateSeletor.removeEventListener("change", onChangedSampleRate);
+        sampleRateSelector.removeEventListener("change", onChangedSampleRate);
         frequencyRangeSelector.removeEventListener("change", onChangedFrequencyRange);
         frequencyTableSizeSelector.removeEventListener("change", onChangedFrequencyTableSize);
         compressButton.removeEventListener("click", onClickedCompressButton);
@@ -53,6 +53,20 @@
     // 入力ファイルが変更
     function onChangedSourceFile(event) {
         console.log("Changed the source file");
+        if (!isInitializedAudio()) {
+            initializeAudio();
+        }
+
+        originalFile = event.target.files[0];
+        let fileReader = new FileReader();
+        fileReader.addEventListener("loadend", (event) => {
+            // TODO: すでに圧縮されている場合の判定を入れる
+            audioContext.decodeAudioData(fileReader.result).then((audioBuffer) => {
+                originalAudioBuffer = audioBuffer;
+                compressButton.disabled = "";
+            });
+        });
+        fileReader.readAsArrayBuffer(originalFile);
     }
 
     // チャネル数が変更
@@ -87,24 +101,62 @@
     function onClickedCompressButton(event) {
         console.log("Clicked the compress button.");
 
-        let worker = new Worker("compress_worker.js");
+        // Worker用にArrayBufferにデータを詰め直す
+        let arrayBuffers = [new ArrayBuffer(16)];
+
+        // Workerでエンコードを実行
+        let worker = new Worker("compresstion_worker.js");
         worker.addEventListener('message', (message) => {
-            console.log(message.data["kind"]);
+            switch (message.data["kind"]) {
+                case "updateProgression":
+                    break;
+                case "completed":
+                    worker.terminate();
+                    makeDonwloadBlob(message.data["arrayBuffer"]);
+                    makeCompressedAudioNode(message.data["arrayBuffer"]);
+                    break;
+                default:
+                    worker.terminate();
+                    break;
+            }
         });
         worker.postMessage({
             "channelCount": channelCount,
             "sampleRate": sampleRate,
             "frequencyRange": frequencyRange,
-            "frequencyTableSize": frequencyTableSize
-        });
+            "frequencyTableSize": frequencyTableSize,
+            "arrayBuffer": arrayBuffers
+        }, arrayBuffers);
+    }
+
+    // ダウンロード用のBlobを作成
+    function makeDonwloadBlob(buffer) {
+        let blob = new Blob(new Uint8Array(buffer), {type: "application/octet-binary"});
+        downloadButton.href = window.URL.createObjectURL(blob);
+        downloadButton.download = "test.wac";
     }
 
     // 再生ボタンがクリックされた
     function onClickedPlayButton(event) {
         console.log("Clicked the play button.");
+
+        if (audioSource == null) {
+            audioSource = audioContext.createBufferSource();
+            audioSource.connect(compressedAudioNode);
+            compressedAudioNode.connect(audioContext.destination);
+            audioSource.start();
+        } else {
+            audioSource.stop();
+            compressedAudioNode.disconnect(audioContext.destination);
+            audioSource.disconnect(compressedAudioNode);
+            audioSource = null;
+        }
     }
 
     // 音声関連
+
+    // 入力元のファイル名
+    let originalFile = null;
 
     // チャネル数
     let channelCount = 2;
@@ -117,16 +169,36 @@
 
     // AudioContextのインスタンス
     let audioContext = null;
-    // 入力ファイルのAudioSource
-    let originalAudioSource = null;
-    // 圧縮済みの
+    // 再生用のAudioSource
+    let audioSource = null;
+    // 入力元のAudioBuffer
+    let originalAudioBuffer = null;
+    // 圧縮処理済みのAudioNode
+    let compressedAudioNode = null;
 
     // Audioの初期化
     function initializeAudio() {
+        if (!isInitializedAudio()) {
+            return;
+        }
+        try {
+            audioContext = new AudioContext();
+        } catch (e) {
+            console.error(e);
+        }
     }
 
     // Audioの後処理
     function terminateAudio() {
+        if (isInitializedAudio()) {
+            return;
+        }
+        if (audioSource != null) {
+            audioSource.stop();
+            compressedAudioNode.disconnect(audioContext.destination);
+            audioSource.disconnect(compressedAudioNode);
+            audioSource = null;
+        }
     }
 
     // Audioは初期化済みか
@@ -134,39 +206,25 @@
         return audioContext != null;
     }
 
-
-
+    // 圧縮されたデータ再生用のAudioNodeを作成
+    function makeCompressedAudioNode(buffer) {
+        let decoder = new wamCodec.WamDcoder(buffer);
+        compressedAudioNode = audioContext.createScriptProcessor(4096, decoder.channelSize, decoder.channelSize);
+        compressedAudioNode.addEventListener("audioprocess", (event) => {
+            let sampleData = new Array(event.outputBuffer.numberOfChannels);
+            for (let i = 0; i < sampleData.length; ++i) {
+                sampleData[i] = event.outputBuffer.getChannelData(i);
+            }
+            for (let i = 0; i < event.outputBuffer.length / decoder.frequencyRange; ++i) {
+                decoder.readFrame(sampleData, decoder.frequencyRange * i);
+            }
+        });
+    }
 
     onload = function () {
         initializeUI();
 
         // TODO 下記は検証用の実装なので早々に書き換える
-
-        let audioContext = null;
-        let audioSource = null;
-        let audioProcessor = null;
-
-        playButton.addEventListener("click", function (event) {
-            if (audioContext == null) {
-                audioContext = new AudioContext();
-            }
-
-            if (audioProcessor == null) {
-                return;
-            }
-
-            if (audioSource == null) {
-                audioSource = audioContext.createBufferSource();
-                audioSource.connect(audioProcessor);
-                audioProcessor.connect(audioContext.destination);
-                audioSource.start();
-            } else {
-                audioSource.stop();
-                audioProcessor.disconnect(audioContext.destination);
-                audioSource.disconnect(audioProcessor);
-                audioSource = null;
-            }
-        });
 
         openFileButton.addEventListener("change", function (event) {
             // 入力ファイルの読み込み
@@ -196,8 +254,8 @@
                     console.log(buf.byteLength);
 
                     let dec = new wamCodec.WamDcoder(buf);
-                    audioProcessor = audioContext.createScriptProcessor(4096, 2, 2);
-                    audioProcessor.onaudioprocess = (event) => {
+                    compressedAudioNode = audioContext.createScriptProcessor(4096, 2, 2);
+                    compressedAudioNode.onaudioprocess = (event) => {
                         let sampleData = new Array(event.outputBuffer.numberOfChannels);
                         for (let i = 0; i < sampleData.length; ++i) {
                             sampleData[i] = event.outputBuffer.getChannelData(i);
@@ -206,17 +264,15 @@
                             dec.readFrame(sampleData, dec.frequencyRange * i);
                         }
                     };
-
-                    // let blob = new Blob(new Uint8Array(buf), {type: "application/octet-binary"});
-                    // let a = document.getElementById("download");
-                    // a.href = window.URL.createObjectURL(blob);
-                    // a.download = "test.wac";
                 });
             };
         });
     };
 
     onunload = function () {
+        if (isInitializedAudio) {
+            terminateAudio();
+        }
         terminateUI();
     };
 

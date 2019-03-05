@@ -40,7 +40,7 @@
         </td>
         <td>
             <label>
-                <select id="channelCountSelector">
+                <select id="channelSizeSelector">
                     <option value="1">モノラル</option>
                     <option value="2" selected>ステレオ</option>
                 </select>
@@ -53,13 +53,11 @@
         </td>
         <td>
             <label>
-                <select id="sampleRateSelector">
+                <select id="samplingRateSelector">
                     <option value="8000">8000Hz</option>
                     <option value="16000">16000Hz</option>
-                    <option value="22050">22050Hz</option>
                     <option value="24000">24000Hz</option>
-                    <option value="44100" selected>44100Hz</option>
-                    <option value="48000">48000Hz</option>
+                    <option value="48000" selected>48000Hz</option>
                 </select>
             </label>
         </td>
@@ -71,6 +69,7 @@
         <td>
             <label>
                 <select id="frequencyRangeSelector">
+                    <option value="128">128</option>
                     <option value="256">256</option>
                     <option value="512">512</option>
                     <option value="1024" selected>1024</option>
@@ -87,12 +86,13 @@
         <td>
             <label>
                 <select id="frequencyTableSizeSelector">
-                    <option value="6">6.25%</option>
-                    <option value="5">9.375%</option>
-                    <option value="4">12.5%</option>
-                    <option value="3" selected>18.75%</option>
-                    <option value="2">25%</option>
-                    <option value="1">50%</option>
+                    <option value="6">32</option>
+                    <option value="5">48</option>
+                    <option value="4">64</option>
+                    <option value="3">96</option>
+                    <option value="2">128</option>
+                    <option value="1" selected>192</option>
+                    <option value="0">256</option>
                 </select>
             </label>
         </td>

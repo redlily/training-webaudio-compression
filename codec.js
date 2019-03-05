@@ -22,7 +22,7 @@ var wamCodec = wamCodec || {};
     // ヘッダオフセット、バージョン
     const HEADER_OFFSET_VERSION = 12;
     // ヘッダオフセット、サンプリングレート
-    const HEADER_OFFSET_SAMPLE_RATE = 16;
+    const HEADER_OFFSET_SAMPLING_RATE = 16;
     // ヘッダオフセット、チャネル数、1がモノラル、2がステレオ
     const HEADER_OFFSET_CHANNEL_SIZE = 20;
     // ヘッダオフセット、サンプル数
@@ -103,15 +103,15 @@ var wamCodec = wamCodec || {};
     // Web Audio Media エンコーダ
     class WamEncoder extends WamCoder {
 
-        constructor(sampleRate, channelSize, frequencyRange, frequencyTableSize, initSampleCount = 4096) {
+        constructor(samplingRate, channelSize, frequencyRange, frequencyTableSize, initSampleCount = 4096) {
             super();
 
-            this.sampleRate = sampleRate;
+            this.samplingRate = samplingRate;
             this.channelSize = channelSize;
             this.frequencyRange = frequencyRange != null ? frequencyRange : 1024;
             this.frequencyTableSize = frequencyTableSize != null ? frequencyTableSize : this.frequencyRange >>> 2;
 
-            assert(sampleRate > 0);
+            assert(samplingRate > 0);
             assert(channelSize > 0);
             assert(frequencyRange > 0);
             assert(frequencyTableSize > 0);
@@ -126,7 +126,7 @@ var wamCodec = wamCodec || {};
             this.data.setUint32(HEADER_OFFSET_DATA_SIZE, 0);
             this.data.setUint32(HEADER_OFFSET_DATA_TYPE, FILE_TYPE_SMD0);
             this.data.setUint32(HEADER_OFFSET_VERSION, SMD0_VERSION);
-            this.data.setUint32(HEADER_OFFSET_SAMPLE_RATE, this.sampleRate);
+            this.data.setUint32(HEADER_OFFSET_SAMPLING_RATE, this.samplingRate);
             this.data.setUint32(HEADER_OFFSET_CHANNEL_SIZE, this.channelSize);
             this.data.setUint32(HEADER_OFFSET_SAMPLE_COUNT, 0);
             this.data.setUint32(HEADER_OFFSET_FREQUENCY_RANGE, this.frequencyRange);
@@ -304,6 +304,10 @@ var wamCodec = wamCodec || {};
     // Web Audio Media デコーダ
     class WamDecoder extends WamCoder {
 
+        static isWamData(data) {
+            return new DataView(data).getUint32(HEADER_OFFSET_MAGIC_NUMBER) == MAGIC_NUMBER;
+        }
+
         constructor(data) {
             super();
 
@@ -312,7 +316,7 @@ var wamCodec = wamCodec || {};
             this.fileSize = this.data.getUint32(HEADER_OFFSET_DATA_SIZE);
             this.fileType = this.data.getUint32(HEADER_OFFSET_DATA_TYPE);
             this.version = this.data.getUint32(HEADER_OFFSET_VERSION);
-            this.sampleRate = this.data.getUint32(HEADER_OFFSET_SAMPLE_RATE);
+            this.samplingRate = this.data.getUint32(HEADER_OFFSET_SAMPLING_RATE);
             this.channelSize = this.data.getUint32(HEADER_OFFSET_CHANNEL_SIZE);
             this.sampleCount = this.data.getUint32(HEADER_OFFSET_SAMPLE_COUNT);
             this.frequencyRange = this.data.getUint32(HEADER_OFFSET_FREQUENCY_RANGE);
@@ -323,7 +327,7 @@ var wamCodec = wamCodec || {};
             assert(this.fileSize <= data.byteLength);
             assert(this.fileType == FILE_TYPE_SMD0);
             assert(this.version == 0);
-            assert(this.sampleRate > 0);
+            assert(this.samplingRate > 0);
             assert(this.channelSize > 0);
             assert(this.sampleCount <= this.frequencyRange * this.frameCount);
             assert(this.frequencyRange > 0);

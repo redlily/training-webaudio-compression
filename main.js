@@ -13,6 +13,8 @@
 
     // ファイルオープンボタン
     let openFileButton;
+    // すでに圧縮済みのファイルであることの表示
+    let alreadyCompressedDataLabel;
     // チャネル数選択
     let channelSizeSelector;
     // サンプルレート選択
@@ -36,6 +38,8 @@
     function initializeUI() {
         openFileButton = document.getElementById("openFileButton");
         openFileButton.addEventListener("change", onChangedSourceFile);
+        alreadyCompressedDataLabel = document.getElementById("alreadyCompressedDataLabel");
+        alreadyCompressedDataLabel.style.display = "none";
         channelSizeSelector = document.getElementById("channelSizeSelector");
         channelSizeSelector.addEventListener("change", onChangedChannelSize);
         samplingRateSelector = document.getElementById("samplingRateSelector");
@@ -51,7 +55,10 @@
         compressButton.disabled = "disabled";
         playButton = document.getElementById("playButton");
         playButton.addEventListener("click", onClickedPlayButton);
+        playButton.disabled = "disabled";
         downloadButton = document.getElementById("downloadButton");
+        downloadButton.style.visibility = "hidden";
+        updateBitRateOfCompressedAudio();
     }
 
     // UI関連の後処理
@@ -72,6 +79,8 @@
         playButton.disabled = "disabled";
         compressButton.disabled = "disabled";
         encodingRateLabel.textContent = "0%";
+        playButton.disabled = "disabled";
+        downloadButton.style.visibility = "hidden";
 
         initializeAudio();
         pauseAudio();
@@ -83,8 +92,10 @@
         fileReader.addEventListener("loadend", (event) => {
             if (wamCodec.WamDcoder.isWamData(fileReader.result)) {
                 makeCompressedAudioNode(fileReader.result);
+                alreadyCompressedDataLabel.style.display = "inline";
                 playButton.disabled = "";
             } else {
+                alreadyCompressedDataLabel.style.display = "none";
                 compressButton.disabled = "";
             }
         });
@@ -132,8 +143,9 @@
     function onClickedCompressButton(event) {
         console.log("Clicked the compress button.");
 
-        playButton.disabled = "disabled";
         compressButton.disabled = "disabled";
+        playButton.disabled = "disabled";
+        downloadButton.style.visibility = "hidden";
 
         initializeAudio();
         pauseAudio();
@@ -144,10 +156,10 @@
             audioContext.decodeAudioData(fileReader.result).then((audioBuffer) => {
                 return encodeAudioData(audioBuffer);
             }).then((encodedBuffer) => {
-                //makeDonwloadBlob(encodedBuffer);
+                makeDownloadLink(encodedBuffer);
                 makeCompressedAudioNode(encodedBuffer);
-                playButton.disabled = "";
                 compressButton.disabled = "";
+                playButton.disabled = "";
             }).catch((error) => {
                 compressButton.disabled = "";
             });
@@ -193,17 +205,19 @@
         });
     }
 
-    // ダウンロード用のBlobを作成
-    function makeDonwloadBlob(buffer) {
-        let blob = new Blob(new Uint8Array(buffer), {type: "application/octet-binary"});
+    // ダウンロード用のリンクを作成
+    function makeDownloadLink(buffer) {
+        let blob = new Blob([buffer], {type: "application/octet-binary"});
         downloadButton.href = window.URL.createObjectURL(blob);
-        downloadButton.download = originalFile.name + ".wac";
+        downloadButton.download = `${(originalFile.name.indexOf(".") != -1 ?
+            originalFile.name.substring(0, originalFile.name.indexOf(".")) :
+            originalFile.name)}.wac`;
+        downloadButton.style.visibility = "visible";
     }
 
     // 再生ボタンがクリックされた
     function onClickedPlayButton(event) {
         console.log("Clicked the play button.");
-
         if (!isPlayAudio()) {
             playAudio()
         } else {
@@ -214,7 +228,7 @@
     // 音声関連
 
     // テーブルサイズマップ
-    let FREQUENCY_TABLE_SIZES = {
+    const FREQUENCY_TABLE_SIZES = {
         0: 256,
         1: 192,
         2: 128,
@@ -224,18 +238,26 @@
         6: 32
     };
 
-    // 入力元のファイル名
-    let originalFile = null;
+    // デフォルト、チャネル数
+    const DEFAULT_CHANNEL_SIZE = 2;
+    // デフォルト、サンプリングレート
+    const DEFAULT_SAMPLING_RATE = 48000;
+    // デフォルト、周波数レンジ
+    const DEFAULT_FREQUENCY_RANGE = 1024;
+    // デフォルト、周波数テーブルサイズ
+    const DEFAULT_FREQUENCY_TABLE_SIZE = 192;
 
     // チャネル数
-    let channelSize = 2;
-    // サンプルレート
-    let samplingRate = 48000;
+    let channelSize = DEFAULT_CHANNEL_SIZE;
+    // サンプリングレート
+    let samplingRate = DEFAULT_SAMPLING_RATE;
     // 周波数レンジ
-    let frequencyRange = 1024;
+    let frequencyRange = DEFAULT_FREQUENCY_RANGE;
     // 周波数テーブルサイズ
-    let frequencyTableSize = 192;
+    let frequencyTableSize = DEFAULT_FREQUENCY_TABLE_SIZE;
 
+    // 入力元のファイル名
+    let originalFile = null;
     // AudioContextのインスタンス
     let audioContext = null;
     // 再生用のAudioSource

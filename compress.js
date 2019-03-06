@@ -39,5 +39,5 @@ self.addEventListener("message", (message) => {
     self.postMessage({
         "kind": "completed",
         "encodedBuffer": encodedBuffer,
-    }, encodedBuffer);
+    }, [encodedBuffer]);
 });

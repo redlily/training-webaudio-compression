@@ -23,7 +23,7 @@
     let frequencyRangeSelector;
     // 周波数テーブル選択
     let frequencyTableSizeSelector;
-    // 圧縮後の予想サイズ
+    // 圧縮後のビットレート
     let compressedBitRateLabel;
     // エンコーディングの進捗率
     let encodingRateLabel;
@@ -48,7 +48,7 @@
         frequencyRangeSelector.addEventListener("change", onChangedFrequencyRange);
         frequencyTableSizeSelector = document.getElementById("frequencyTableSizeSelector");
         frequencyTableSizeSelector.addEventListener("change", onChangedFrequencyTableSize);
-        compressedBitRateLabel = document.getElementById("compressedSizeLabel");
+        compressedBitRateLabel = document.getElementById("compressedBitRateLabel");
         encodingRateLabel = document.getElementById("encodingRateLabel");
         compressButton = document.getElementById("compressButton");
         compressButton.addEventListener("click", onClickedCompressButton);
@@ -123,15 +123,26 @@
         let value = this.options[this.selectedIndex].value;
         console.log(`Changed the frequency range from ${frequencyRange} to ${value}.`);
         frequencyRange = Number.parseFloat(value);
+        updateFrequencyTableSize();
         updateBitRateOfCompressedAudio();
     }
 
     // 周波数テーブルサイズが変更
     function onChangedFrequencyTableSize(event) {
-        let value = this.options[this.selectedIndex].value;
-        console.log(`Changed the frequency table size from ${frequencyTableSize} to ${value}.`);
-        frequencyTableSize = Number.parseFloat(value);
+        let prev = frequencyTableSize;
+        updateFrequencyTableSize();
         updateBitRateOfCompressedAudio();
+        console.log(`Changed the frequency table size from ${prev} to ${frequencyTableSize}.`);
+    }
+
+    // 周波数テーブルサイズの更新
+    function updateFrequencyTableSize() {
+        frequencyTableSize =
+            FREQUENCY_TABLE_SIZES[frequencyTableSizeSelector.selectedIndex] * frequencyRange / DEFAULT_FREQUENCY_RANGE;
+        for (let i = 0; i < FREQUENCY_TABLE_SIZES.length; ++i) {
+            frequencyTableSizeSelector.options[i].text =
+                `${Math.round(FREQUENCY_TABLE_SIZES[i] * frequencyRange / DEFAULT_FREQUENCY_RANGE)}`;
+        }
     }
 
     // 圧縮後のビットレート
@@ -196,11 +207,13 @@
                 }
             });
             worker.postMessage({
+                "frequencyRange": frequencyRange,
                 "channelSize": channelSize,
                 "samplingRate": samplingRate,
-                "frequencyRange": frequencyRange,
                 "frequencyTableSize": frequencyTableSize,
-                "sampleData": sampleData
+                "originalSamplingRate": audioBuffer.sampleRate,
+                "originalChannelSize": audioBuffer.numberOfChannels,
+                "originalSampleData": sampleData
             }, sampleData.map((value => value.buffer)));
         });
     }
@@ -228,29 +241,31 @@
     // 音声関連
 
     // テーブルサイズマップ
-    const FREQUENCY_TABLE_SIZES = {
-        0: 256,
-        1: 192,
-        2: 128,
-        3: 96,
-        4: 64,
-        5: 48,
-        6: 32
-    };
+    const FREQUENCY_TABLE_SIZES = [
+        16,
+        24,
+        32,
+        48,
+        64,
+        96,
+        128,
+        192,
+        256
+    ];
 
-    // デフォルト、チャネル数
-    const DEFAULT_CHANNEL_SIZE = 2;
     // デフォルト、サンプリングレート
     const DEFAULT_SAMPLING_RATE = 48000;
+    // デフォルト、チャネル数
+    const DEFAULT_CHANNEL_SIZE = 2;
     // デフォルト、周波数レンジ
     const DEFAULT_FREQUENCY_RANGE = 1024;
     // デフォルト、周波数テーブルサイズ
     const DEFAULT_FREQUENCY_TABLE_SIZE = 192;
 
-    // チャネル数
-    let channelSize = DEFAULT_CHANNEL_SIZE;
     // サンプリングレート
     let samplingRate = DEFAULT_SAMPLING_RATE;
+    // チャネル数
+    let channelSize = DEFAULT_CHANNEL_SIZE;
     // 周波数レンジ
     let frequencyRange = DEFAULT_FREQUENCY_RANGE;
     // 周波数テーブルサイズ
@@ -293,15 +308,29 @@
     // 圧縮されたデータ再生用のAudioNodeを作成
     function makeCompressedAudioNode(buffer) {
         let decoder = new wamCodec.WamDcoder(buffer);
-        audioContext = new AudioContext();
+        audioContext = new AudioContext({sampleRate: 4800});
         compressedAudioNode = audioContext.createScriptProcessor(4096, decoder.channelSize, decoder.channelSize);
         compressedAudioNode.addEventListener("audioprocess", (event) => {
             let sampleData = new Array(event.outputBuffer.numberOfChannels);
             for (let i = 0; i < sampleData.length; ++i) {
                 sampleData[i] = event.outputBuffer.getChannelData(i);
             }
-            for (let i = 0; i < event.outputBuffer.length / decoder.frequencyRange; ++i) {
+
+            // デコード
+            let times = audioContext.sampleRate / decoder.samplingRate;
+            for (let i = 0; i < event.outputBuffer.length / times / decoder.frequencyRange; ++i) {
                 decoder.readFrame(sampleData, decoder.frequencyRange * i);
+            }
+
+            // AudioContextとサンプリングレートが合わない場合は修正
+            if (decoder.samplingRate < audioContext.sampleRate) {
+                let times = audioContext.sampleRate / decoder.samplingRate;
+                for (let i = 0; i < decoder.channelSize; ++i) {
+                    let samples = sampleData[i];
+                    for (let j = samples.length - 1; j >= 0; --j) {
+                        samples[j] = samples[Math.floor(j / times)];
+                    }
+                }
             }
         });
     }

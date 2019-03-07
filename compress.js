@@ -5,16 +5,45 @@ importScripts("codec.js");
 
 self.addEventListener("message", (message) => {
     // パラメータ取得
-    let channelSize = message.data["channelSize"];
     let samplingRate = message.data["samplingRate"];
+    let channelSize = message.data["channelSize"];
     let frequencyRange = message.data["frequencyRange"];
     let frequencyTableSize = message.data["frequencyTableSize"];
-    let sampleData = message.data["sampleData"];
-    let sampleCount = sampleData[0].length;
+    let originalSamplingRate = message.data["originalSamplingRate"];
+    let originalChannelSize = message.data["originalChannelSize"];
+    let originalSampleData = message.data["originalSampleData"];
+    let originalSampleCount = originalSampleData[0].length;
+    let sampleCount = originalSampleCount;
+
+    // サンプリングレートが元データと異なる場合
+    if (samplingRate < originalSamplingRate) {
+        let times = originalSamplingRate / samplingRate;
+        sampleCount /= times;
+        for (let i = 0; i < originalChannelSize; ++i) {
+            let samples = originalSampleData[i];
+
+            for (let j = 0; j < originalSampleCount; ++j) {
+                samples[j] = samples[Math.floor(j * times)];
+            }
+        }
+    }
+
+    // チャネル数が元データと異なる場合
+    if (channelSize == 1 && originalChannelSize == 2) {
+        // 減った場合
+        let left = originalSampleData[0];
+        let right = originalSampleData[1];
+        for (let i = 0; i < originalSampleCount; ++i) {
+            left[i] += right[i];
+        }
+    } else if (channelSize > originalChannelSize) {
+        // 増えた場合
+        channelSize = originalChannelSize;
+    }
 
     console.log(`encoding`);
-    console.log(`channel size ${channelSize}`);
     console.log(`sampling rate ${samplingRate}`);
+    console.log(`channel size ${channelSize}`);
     console.log(`frequency range ${frequencyRange}`);
     console.log(`frequency table size ${frequencyTableSize}`);
     console.log(`sample count ${sampleCount}`);
@@ -23,7 +52,7 @@ self.addEventListener("message", (message) => {
     let encoder = new wamCodec.WamEncoder(samplingRate, channelSize, frequencyRange, frequencyTableSize, sampleCount);
     for (let k = 0; k < (sampleCount / frequencyRange) - 1; ++k) {
         encoder.writeFrame(
-            sampleData, frequencyRange * k, Math.min(frequencyRange, sampleCount - frequencyRange * (k + 1)));
+            originalSampleData, frequencyRange * k, Math.min(frequencyRange, sampleCount - frequencyRange * (k + 1)));
         self.postMessage({
             "kind": "update",
             "progress": (k * frequencyRange) / sampleCount

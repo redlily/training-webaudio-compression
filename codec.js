@@ -114,6 +114,7 @@ var wamCodec = wamCodec || {};
             assert(samplingRate > 0);
             assert(channelSize > 0);
             assert(frequencyRange > 0);
+            assert(frequencyRange % 32 == 0); // 効率を重視して32の倍数である必要がある
             assert(frequencyTableSize > 0);
             assert(frequencyTableSize % 4 == 0); // バイト境界を考慮して8の倍数である必要がある
 
@@ -135,8 +136,8 @@ var wamCodec = wamCodec || {};
 
             this.setupWindowFunction();
 
-            this.subScales = new Uint8Array(8);
-            this.subScaleStart = 1 << Math.max(Math.log2(this.frequencyRange) - 8, 1);
+            this.subScales = new Uint8Array(Math.min(Math.round(Math.log2(this.frequencyRange)), 8));
+            this.subScaleStart = 1 << Math.max(Math.round(Math.log2(this.frequencyRange)) - 8, 1);
             this.frequencyFlags = new Uint32Array(this.frequencyRange / 32);
             this.frequencies = new Float32Array(this.frequencyRange);
             this.frequencyPowers = new Float32Array(this.frequencyRange);
@@ -145,8 +146,17 @@ var wamCodec = wamCodec || {};
             for (let i = 0; i < this.channelSize; ++i) {
                 this.prevInputs[i] = new Float32Array(this.frequencyRange);
             }
-
             this.frameCount = 0;
+            this.workBuffer = new Array(this.channelSize);
+            for (let i = 0; i < this.channelSize; ++i) {
+                this.workBuffer = new Float32Array(this.frequencyRange);
+            }
+        }
+
+        write(inputData, start = 0, length = this.frequencyRange) {
+            for (let i = 0; i < length; i += this.frequencyRange) {
+                // TODO: frequency rangeの倍数でなく中途半端なサンプル数を書き込めるような処理を実装
+            }
         }
 
         writeFrame(inputData, start = 0, length = this.frequencyRange) {
@@ -256,7 +266,7 @@ var wamCodec = wamCodec || {};
                     dataOffset += 4;
                 }
 
-                // 周波数テーブルを書き出し
+                // MDCT用の周波数配列から必要な分を周波数テーブルへ書き出し
                 let frequencyOffset = 0;
                 for (let j = 0; j < this.subScales.length; ++j) {
                     let subScale = this.subScales[j];
@@ -335,8 +345,8 @@ var wamCodec = wamCodec || {};
 
             this.setupWindowFunction();
 
-            this.subScales = new Uint8Array(8);
-            this.subScaleStart = 1 << Math.max(Math.log2(this.frequencyRange) - 8, 0);
+            this.subScales = new Uint8Array(Math.min(Math.round(Math.log2(this.frequencyRange)), 8));
+            this.subScaleStart = 1 << Math.max(Math.round(Math.log2(this.frequencyRange)) - 8, 0);
             this.frequencyFlags = new Uint32Array(this.frequencyRange / 32);
             this.frequencies = new Float32Array(this.frequencyRange);
             this.samples = new Float32Array(this.frequencyRange << 1);
@@ -345,9 +355,22 @@ var wamCodec = wamCodec || {};
                 this.prevOutputs[i] = new Float32Array(this.frequencyRange);
             }
             this.currentFrame = 0;
+            this.workBuffer = new Array(this.channelSize);
+            for (let i = 0; i < this.channelSize; ++i) {
+                this.workBuffer = new Float32Array(this.frequencyRange);
+            }
+            this.writedWorkBuffer = 0;
+        }
+
+        read(outputData, start = 0, length = this.frequencyRange) {
+            for (let i = 0; i < length; i += this.frequencyRange) {
+                // TODO: frequency rangeの倍数でなく中途半端なサンプル数を読み込めるような処理を実装
+            }
         }
 
         readFrame(outputData, start = 0, length = this.frequencyRange) {
+            assert(length <= this.frequencyRange && length >= 0);
+
             for (let i = 0; i < this.channelSize; ++i) {
                 let output = outputData[i];
                 let dataOffset = this.getDataOffset(this.currentFrame, i);
@@ -367,7 +390,7 @@ var wamCodec = wamCodec || {};
                     dataOffset += 4;
                 }
 
-                // 周波数テーブルを取得
+                // 周波数テーブルを取得、MDCT用の周波数配列に書き込み
                 this.frequencies.fill(0);
                 let frequencyOffset = 0;
                 for (let j = 0; j < this.subScales.length; ++j) {

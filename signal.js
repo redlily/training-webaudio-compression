@@ -1,8 +1,12 @@
 // 信号処理用のユーティリティ
 
+//
 // 高速離散フーリエ変換用のクラス
 //
 // アルゴリズムは Cooly and Tukey
+//
+// 参考
+// https://en.wikipedia.org/wiki/Cooley%E2%80%93Tukey_FFT_algorithm#The_radix-2_DIT_case
 //
 // y[2k] = Σ[N-1,j=0] (x[j] + x[N/2 + j]) e^((-2πijk) / (N/2))
 // y[2k-1] = Σ[N-1,j=0] ((x[j] - x[N/2 + j]) e^(-2πik / N)) e^((-2πijk) / (N/2))
@@ -13,6 +17,7 @@
 // j - サンプリング配列の添字 (時間)
 // k - 周波数配列への添字 (周波数)
 // i - 単位虚数
+//
 class FastDFT {
 
     // 要素を入れ替える
@@ -108,9 +113,14 @@ class FastDFT {
     }
 }
 
+//
 // 高速離散コサイン変換用のクラス、タイプIIとタイプIIIを備える
 //
 // アルゴリズムは Byeong Gi Lee
+//
+// 参考
+// https://citeseerx.ist.psu.edu/viewdoc/download?doi=10.1.1.118.3056&rep=rep1&type=pdf#page=34
+// https://pdfs.semanticscholar.org/ed00/5160f5befd45073fd01b697227d009cad919.pdf
 //
 // DCT-IIの数式、DCT-IIIはこれの逆順で実装
 // y[2k] = Σ[n/2,m=0] (x[m]+x[n/2-1-m]) cos(π(2m+1)k/n)
@@ -121,6 +131,7 @@ class FastDFT {
 // y - 周波数配列
 // j - サンプリング配列の添字 (時間)
 // k - 周波数配列への添字 (周波数)
+//
 class FastDCT {
 
     // 要素を入れ替える
@@ -228,8 +239,14 @@ class FastDCT {
     }
 }
 
+//
 // 高速修正離散コサイン変換用のクラス
+// 
 // アルゴリズムは Mu-Huo Cheng and Yu-Hsin Hsu
+//
+// 参考
+// https://pdfs.semanticscholar.org/2f26/a658836927331d559e723ac36b8dab911b14.pdf
+//
 class FastMDCT {
 
     // 修正コサイン変換

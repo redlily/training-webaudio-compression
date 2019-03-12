@@ -355,16 +355,47 @@ var wamCodec = wamCodec || {};
                 this.prevOutputs[i] = new Float32Array(this.frequencyRange);
             }
             this.currentFrame = 0;
-            this.workBuffer = new Array(this.channelSize);
+            this.workBuffers = new Array(this.channelSize);
             for (let i = 0; i < this.channelSize; ++i) {
-                this.workBuffer = new Float32Array(this.frequencyRange);
+                this.workBuffers[i] = new Float32Array(this.frequencyRange);
             }
-            this.writedWorkBuffer = 0;
+            this.workBufferOffset = this.frequencyRange;
         }
 
         read(outputData, start = 0, length = this.frequencyRange) {
-            for (let i = 0; i < length; i += this.frequencyRange) {
-                // TODO: frequency rangeの倍数でなく中途半端なサンプル数を読み込めるような処理を実装
+            // 書き込み出来ていないサンプルを出力バッファ書き込む
+            if (this.workBufferOffset < this.frequencyRange) {
+                let writeSize = Math.min(length, this.frequencyRange - this.workBufferOffset);
+                for (let i = 0; i < this.channelSize; ++i) {
+                    let output = outputData[i];
+                    let workBuffer = this.workBuffers[i];
+                    for (let j = 0; j < writeSize; ++j) {
+                        output[start + j] = workBuffer[this.workBufferOffset + j];
+                    }
+                }
+                start += writeSize;
+                length -= writeSize;
+                this.workBufferOffset += writeSize;
+            }
+
+            // 出力バッファにフレーム単位で読み込む
+            while (length >= this.frequencyRange) {
+                this.readFrame(outputData, start);
+                start += this.frequencyRange;
+                length -= this.frequencyRange;
+            }
+
+            // まだ出力バッファに書き込みきれていない場合
+            if (length > 0) {
+                this.readFrame(this.workBuffers, 0);
+                for (let i = 0; i < this.channelSize; ++i) {
+                    let output = outputData[i];
+                    let workBuffer = this.workBuffers[i];
+                    for (let j = 0; j < length; ++j) {
+                        output[start + j] = workBuffer[j];
+                    }
+                }
+                this.workBufferOffset = length;
             }
         }
 

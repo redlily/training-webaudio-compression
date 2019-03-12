@@ -17,8 +17,9 @@ self.addEventListener("message", (message) => {
 
     // サンプリングレートが元データと異なる場合
     if (samplingRate < originalSamplingRate) {
+        // 減らす場合
         let times = originalSamplingRate / samplingRate;
-        sampleCount /= times;
+        sampleCount = Math.floor(sampleCount / times);
         for (let i = 0; i < originalChannelSize; ++i) {
             let samples = originalSampleData[i];
 
@@ -26,18 +27,21 @@ self.addEventListener("message", (message) => {
                 samples[j] = samples[Math.floor(j * times)];
             }
         }
+    } else if (samplingRate > originalSamplingRate) {
+        // 増やす場合、増やさない
+        samplingRate = originalSamplingRate;
     }
 
     // チャネル数が元データと異なる場合
     if (channelSize == 1 && originalChannelSize == 2) {
-        // 減った場合
+        // 減らす場合
         let left = originalSampleData[0];
         let right = originalSampleData[1];
-        for (let i = 0; i < originalSampleCount; ++i) {
+        for (let i = 0; i < sampleCount; ++i) {
             left[i] += right[i];
         }
-    } else if (channelSize > originalChannelSize) {
-        // 増えた場合
+    } else if (channelSize > sampleCount) {
+        // 増やす場合、増やさない
         channelSize = originalChannelSize;
     }
 

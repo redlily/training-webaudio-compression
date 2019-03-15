@@ -55,13 +55,13 @@ self.addEventListener("message", (message) => {
     // エンコード
     let encoder = new wamCodec.WamEncoder(samplingRate, channelSize, frequencyRange, frequencyTableSize, sampleCount);
     for (let k = 0; k < (sampleCount / frequencyRange) - 1; ++k) {
-        encoder.writeFrame(
-            originalSampleData, frequencyRange * k, Math.min(frequencyRange, sampleCount - frequencyRange * (k + 1)));
+        encoder.write(originalSampleData, frequencyRange * k, Math.min(frequencyRange, sampleCount - frequencyRange * (k + 1)));
         self.postMessage({
             "kind": "update",
             "progress": (k * frequencyRange) / sampleCount
         });
     }
+    encoder.flush();
     self.postMessage({
         "kind": "update",
         "progress": 1.0

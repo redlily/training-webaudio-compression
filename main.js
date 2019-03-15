@@ -82,8 +82,8 @@
         playButton.disabled = "disabled";
         downloadButton.style.visibility = "hidden";
 
-        initializeAudio();
         pauseAudio();
+        initializeAudio();
 
         originalFile = event.target.files[0];
 
@@ -147,7 +147,9 @@
 
     // 圧縮後のビットレート
     function updateBitRateOfCompressedAudio() {
-        compressedBitRateLabel.textContent = "bps";
+        // (主音量 + 副音量(8チャネル) + 周波数フラグ + 周波数テーブル) * チャネル数
+        let frameSize = 32 + 32 + (1 * frequencyRange + 4 * frequencyTableSize) * channelSize;
+        compressedBitRateLabel.textContent = `${Math.round(frameSize * samplingRate / frequencyRange / 1000)} kbps`;
     }
 
     // 圧縮ボタンがクリックされた
@@ -158,8 +160,9 @@
         playButton.disabled = "disabled";
         downloadButton.style.visibility = "hidden";
 
-        initializeAudio();
         pauseAudio();
+        terminateAudio();
+        initializeAudio();
 
         // ファイルの読み込み
         let fileReader = new FileReader();
@@ -250,7 +253,9 @@
         96,
         128,
         192,
-        256
+        256,
+        384,
+        512,
     ];
 
     // デフォルト、サンプリングレート
@@ -286,12 +291,12 @@
     }
 
     // Audioの初期化
-    function initializeAudio() {
+    function initializeAudio(sampleRate = 48000) {
         if (isInitializedAudio()) {
             return;
         }
         try {
-            audioContext = new AudioContext();
+            audioContext = new AudioContext({"sampleRate": sampleRate});
         } catch (e) {
             console.error(e);
         }
@@ -303,12 +308,14 @@
             return;
         }
         pauseAudio();
+        audioContext = null;
     }
 
     // 圧縮されたデータ再生用のAudioNodeを作成
     function makeCompressedAudioNode(buffer) {
         let decoder = new wamCodec.WamDcoder(buffer);
-        audioContext = new AudioContext({sampleRate: 4800});
+        terminateAudio();
+        initializeAudio(decoder.samplingRate);
         compressedAudioNode = audioContext.createScriptProcessor(4096, decoder.channelSize, decoder.channelSize);
         compressedAudioNode.addEventListener("audioprocess", (event) => {
             let sampleData = new Array(event.outputBuffer.numberOfChannels);
@@ -317,18 +324,19 @@
             }
 
             // デコード
-            let times = audioContext.sampleRate / decoder.samplingRate;
-            for (let i = 0; i < event.outputBuffer.length / times / decoder.frequencyRange; ++i) {
-                decoder.readFrame(sampleData, decoder.frequencyRange * i);
-            }
+            let sampleTimes = audioContext.sampleRate / decoder.samplingRate;
+            let sampleCount = Math.floor(event.outputBuffer.length / sampleTimes);
+            decoder.read(sampleData, 0, sampleCount);
 
             // AudioContextとサンプリングレートが合わない場合は修正
-            if (decoder.samplingRate < audioContext.sampleRate) {
-                let times = audioContext.sampleRate / decoder.samplingRate;
+            if (sampleTimes > 1) {
                 for (let i = 0; i < decoder.channelSize; ++i) {
                     let samples = sampleData[i];
-                    for (let j = samples.length - 1; j >= 0; --j) {
-                        samples[j] = samples[Math.floor(j / times)];
+                    for (let j = sampleCount - 1; j >= 0; --j) {
+                        let sample = samples[j];
+                        for (let k = Math.round(j * sampleTimes); k < Math.round((j + 1) * sampleTimes); ++k) {
+                            samples[k] = sample;
+                        }
                     }
                 }
             }

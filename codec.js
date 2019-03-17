@@ -62,6 +62,9 @@ var wamCodec = wamCodec || {};
             this.subScales = null;
             this.windowFunction = null;
             this.samples = null;
+            this.indexBitSize = 0;
+            this.indicesSize = 0;
+            this.isIndexMode = false;
         }
 
         readHalfUbyte(offset, index) {
@@ -94,7 +97,7 @@ var wamCodec = wamCodec || {};
         getDataOffset(frame, channel) {
             return HEADER_OFFSET_DATA +
                 (FRAME_OFFSET_DATA +
-                    this.frequencyRange / 8 +
+                    (this.isIndexMode ? (this.indicesSize / 8) : (this.frequencyRange / 8)) +
                     (this.frequencyTableSize >>> 1)) *
                 (this.channelSize * frame + channel);
         }
@@ -138,6 +141,9 @@ var wamCodec = wamCodec || {};
 
             this.subScales = new Uint8Array(Math.min(Math.round(Math.log2(this.frequencyRange)), 8));
             this.subScaleStart = 1 << Math.max(Math.round(Math.log2(this.frequencyRange)) - 8, 1);
+            this.indexBitSize = Math.round(Math.log2(this.frequencyRange));
+            this.indicesSize = Math.ceil(this.indexBitSize * this.frequencyTableSize / 32) * 32;
+            this.isIndexMode = this.frequencyRange > this.indicesSize;
             this.frequencyFlags = new Uint32Array(this.frequencyRange / 32);
             this.frequencies = new Float32Array(this.frequencyRange);
             this.frequencyPowers = new Float32Array(this.frequencyRange);
@@ -149,7 +155,7 @@ var wamCodec = wamCodec || {};
             this.frameCount = 0;
             this.workBuffers = new Array(this.channelSize);
             for (let i = 0; i < this.channelSize; ++i) {
-                this.workBuffers[i] = new Float32Array(this.frequencyRange << 1);
+                this.workBuffers[i] = new Float32Array(this.frequencyRange);
             }
             this.workBufferOffset = 0;
         }
@@ -177,7 +183,7 @@ var wamCodec = wamCodec || {};
             }
 
             // 入力バッファをフレーム単位で読み込む
-            while (length >= this.frequencyRange << 1) {
+            while (length >= this.frequencyRange) {
                 this.writeFrame(inputData, start);
                 start += this.frequencyRange;
                 length -= this.frequencyRange;
@@ -309,9 +315,32 @@ var wamCodec = wamCodec || {};
 
                 // 周波数フラグを書き出し
                 dataOffset += FRAME_OFFSET_DATA;
-                for (let j = 0; j < this.frequencyFlags.length; ++j) {
-                    this.data.setUint32(dataOffset, this.frequencyFlags[j]);
-                    dataOffset += 4;
+                if (this.isIndexMode) {
+                    // 有効な周波数をインデックスで書き出す
+                    let value = 0;
+                    let index = 0;
+                    for (let j = 0; j < this.frequencyRange; ++j) {
+                        if ((this.frequencyFlags[Math.floor(j / 32)] >>> j % 32) & 0x1 != 0) {
+                            value |= j << index;
+                            index += this.indexBitSize;
+                            if (index >= 32) {
+                                this.data.setUint32(dataOffset, value);
+                                dataOffset += 4;
+                                index %= 32;
+                                value = j >> (this.indexBitSize - index);
+                            }
+                        }
+                    }
+                    if (index != 0) {
+                        this.data.setUint32(dataOffset, value);
+                        dataOffset += 4;
+                    }
+                } else {
+                    // 有効な周波数を1bitのフラグで書き出す
+                    for (let j = 0; j < this.frequencyFlags.length; ++j) {
+                        this.data.setUint32(dataOffset, this.frequencyFlags[j]);
+                        dataOffset += 4;
+                    }
                 }
 
                 // MDCT用の周波数配列から必要な分を周波数テーブルへ書き出し
@@ -395,6 +424,9 @@ var wamCodec = wamCodec || {};
 
             this.subScales = new Uint8Array(Math.min(Math.round(Math.log2(this.frequencyRange)), 8));
             this.subScaleStart = 1 << Math.max(Math.round(Math.log2(this.frequencyRange)) - 8, 1);
+            this.indexBitSize = Math.round(Math.log2(this.frequencyRange));
+            this.indicesSize = Math.ceil(this.indexBitSize * this.frequencyTableSize / 32) * 32;
+            this.isIndexMode = this.frequencyRange > this.indicesSize;
             this.frequencyFlags = new Uint32Array(this.frequencyRange / 32);
             this.frequencies = new Float32Array(this.frequencyRange);
             this.samples = new Float32Array(this.frequencyRange << 1);
@@ -467,9 +499,32 @@ var wamCodec = wamCodec || {};
 
                 // 周波数フラグを取得
                 dataOffset += FRAME_OFFSET_DATA;
-                for (let j = 0; j < this.frequencyFlags.length; ++j) {
-                    this.frequencyFlags[j] = this.data.getUint32(dataOffset);
+                if (this.isIndexMode) {
+                    // 有効な周波数をインデックスで判別
+                    this.frequencyFlags.fill(0);
+                    let index = 0;
+                    let mask = (1 << this.indexBitSize) - 1;
+                    let value = this.data.getUint32(dataOffset);
                     dataOffset += 4;
+                    for (let j = 0; j < this.frequencyTableSize; ++j) {
+                        let bitIndex = mask & value;
+                        value >>>= this.indexBitSize;
+                        index += this.indexBitSize;
+                        if (index > 32) {
+                            value = this.data.getUint32(dataOffset);
+                            dataOffset += 4;
+                            index %= 32;
+                            bitIndex |= mask & (value << (this.indexBitSize - index));
+                            value >>>= index;
+                        }
+                        this.frequencyFlags[Math.floor(bitIndex / 32)] |= 1 << (bitIndex % 32);
+                    }
+                } else {
+                    // 有効な周波数を1bitのフラグで判別
+                    for (let j = 0; j < this.frequencyFlags.length; ++j) {
+                        this.frequencyFlags[j] = this.data.getUint32(dataOffset);
+                        dataOffset += 4;
+                    }
                 }
 
                 // 周波数テーブルを取得、MDCT用の周波数配列に書き込み

@@ -148,7 +148,12 @@
     // 圧縮後のビットレート
     function updateBitRateOfCompressedAudio() {
         // (主音量 + 副音量(8チャネル) + 周波数フラグ + 周波数テーブル) * チャネル数
-        let frameSize = 32 + 32 + (1 * frequencyRange + 4 * frequencyTableSize) * channelSize;
+        let frameSize = 32 + 32
+            + (Math.min(
+                1 * frequencyRange,
+                Math.ceil(Math.log2(frequencyRange) * frequencyTableSize / 32) * 32)
+                + 4 * frequencyTableSize)
+            * channelSize;
         compressedBitRateLabel.textContent = `${Math.round(frameSize * samplingRate / frequencyRange / 1000)} kbps`;
     }
 

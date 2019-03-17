@@ -161,7 +161,7 @@ var wamCodec = wamCodec || {};
         }
 
         write(inputData, start = 0, length = this.frequencyRange) {
-            assert(inputData.length == this.channelSize);
+            assert(inputData.length >= this.channelSize);
 
             // 書き込み出来ていないサンプルを書き込む
             if (this.workBufferOffset > 0) {
@@ -213,7 +213,7 @@ var wamCodec = wamCodec || {};
         }
 
         writeFrame(inputData, start = 0, length = this.frequencyRange) {
-            assert(inputData.length == this.channelSize);
+            assert(inputData.length >= this.channelSize);
             assert(length <= this.frequencyRange && length >= 0);
 
             this.nextFrame();
@@ -443,7 +443,7 @@ var wamCodec = wamCodec || {};
         }
 
         read(outputData, start = 0, length = this.frequencyRange) {
-            assert(outputData.length == this.channelSize);
+            assert(outputData.length >= this.channelSize);
 
             // 書き込み出来ていないサンプルを出力バッファ書き込む
             if (this.workBufferOffset < this.frequencyRange) {
@@ -482,7 +482,7 @@ var wamCodec = wamCodec || {};
         }
 
         readFrame(outputData, start = 0, length = this.frequencyRange) {
-            assert(outputData.length == this.channelSize);
+            assert(outputData.length >= this.channelSize);
             assert(length <= this.frequencyRange && length >= 0);
 
             for (let i = 0; i < this.channelSize; ++i) {

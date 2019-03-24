@@ -29,6 +29,8 @@ var wamCodec = wamCodec || {};
     const HEADER_OFFSET_SAMPLE_COUNT = 24;
     // ヘッダオフセット、周波数レンジ、2のべき乗の値を設定する必要がある
     const HEADER_OFFSET_FREQUENCY_RANGE = 28;
+    // ヘッダオフセット、周波数の上限
+    const HEADER_OFFSET_FREQUENCY_UPPER_LIMIT = 30;
     // ヘッダオフセット、周波数テーブルサイズ、32で割れる数を指定すると効率が良い
     const HEADER_OFFSET_FREQUENCY_TABLE_SIZE = 32;
     // ヘッダオフセット、フレーム数
@@ -58,6 +60,7 @@ var wamCodec = wamCodec || {};
             this.data = null;
             this.channelSize = 0;
             this.frequencyRange = 0;
+            this.frequencyUpperLimit = 0;
             this.frequencyTableSize = 0;
             this.subScales = null;
             this.windowFunction = null;
@@ -106,20 +109,22 @@ var wamCodec = wamCodec || {};
     // Web Audio Media エンコーダ
     class WamEncoder extends WamCoder {
 
-        constructor(samplingRate, channelSize, frequencyRange, frequencyTableSize, initSampleCount = 4096) {
+        constructor(samplingRate, channelSize, frequencyRange, frequencyUpperLimit, frequencyTableSize, initSampleCount = 4096) {
             super();
 
             this.samplingRate = samplingRate;
             this.channelSize = channelSize;
             this.frequencyRange = frequencyRange != null ? frequencyRange : 1024;
+            this.frequencyUpperLimit = frequencyUpperLimit != null ? frequencyUpperLimit : this.frequencyRange;
             this.frequencyTableSize = frequencyTableSize != null ? frequencyTableSize : this.frequencyRange >>> 2;
 
-            assert(samplingRate > 0);
-            assert(channelSize > 0);
-            assert(frequencyRange > 0);
-            assert(frequencyRange % 32 == 0); // 効率を重視して32の倍数である必要がある
-            assert(frequencyTableSize > 0);
-            assert(frequencyTableSize % 4 == 0); // バイト境界を考慮して8の倍数である必要がある
+            assert(this.samplingRate > 0);
+            assert(this.channelSize > 0);
+            assert(this.frequencyRange > 0);
+            assert(this.frequencyRange % 32 == 0); // 効率を重視して32の倍数である必要がある
+            assert(this.frequencyUpperLimit <= frequencyRange);
+            assert(this.frequencyTableSize > 0);
+            assert(this.frequencyTableSize % 4 == 0); // バイト境界を考慮して8の倍数である必要がある
 
             let initBufferSize = HEADER_OFFSET_DATA +
                 (FRAME_OFFSET_DATA + (this.frequencyRange / 32) * 4 + this.frequencyTableSize) *
@@ -133,15 +138,16 @@ var wamCodec = wamCodec || {};
             this.data.setUint32(HEADER_OFFSET_SAMPLING_RATE, this.samplingRate);
             this.data.setUint32(HEADER_OFFSET_CHANNEL_SIZE, this.channelSize);
             this.data.setUint32(HEADER_OFFSET_SAMPLE_COUNT, 0);
-            this.data.setUint32(HEADER_OFFSET_FREQUENCY_RANGE, this.frequencyRange);
-            this.data.setUint32(HEADER_OFFSET_FREQUENCY_TABLE_SIZE, this.frequencyTableSize);
+            this.data.setUint16(HEADER_OFFSET_FREQUENCY_RANGE, this.frequencyRange);
+            this.data.setUint16(HEADER_OFFSET_FREQUENCY_UPPER_LIMIT, this.frequencyUpperLimit);
+            this.data.setUint16(HEADER_OFFSET_FREQUENCY_TABLE_SIZE, this.frequencyTableSize);
             this.data.setUint32(HEADER_OFFSET_FRAME_COUNT, 0);
 
             this.setupWindowFunction();
 
-            this.subScales = new Uint8Array(Math.min(Math.round(Math.log2(this.frequencyRange)), 8));
-            this.subScaleStart = 1 << Math.max(Math.round(Math.log2(this.frequencyRange)) - 8, 1);
-            this.indexBitSize = Math.round(Math.log2(this.frequencyRange));
+            this.subScales = new Uint8Array(Math.min(Math.ceil(Math.log2(this.frequencyUpperLimit)), 8));
+            this.subScaleStart = 1 << Math.max(Math.ceil(Math.log2(this.frequencyRange)) - 8, 1);
+            this.indexBitSize = Math.ceil(Math.log2(this.frequencyRange));
             this.indicesSize = Math.ceil(this.indexBitSize * this.frequencyTableSize / 32) * 32;
             this.isIndexMode = this.frequencyRange > this.indicesSize;
             this.frequencyFlags = new Uint32Array(this.frequencyRange / 32);
@@ -406,8 +412,9 @@ var wamCodec = wamCodec || {};
             this.samplingRate = this.data.getUint32(HEADER_OFFSET_SAMPLING_RATE);
             this.channelSize = this.data.getUint32(HEADER_OFFSET_CHANNEL_SIZE);
             this.sampleCount = this.data.getUint32(HEADER_OFFSET_SAMPLE_COUNT);
-            this.frequencyRange = this.data.getUint32(HEADER_OFFSET_FREQUENCY_RANGE);
-            this.frequencyTableSize = this.data.getUint32(HEADER_OFFSET_FREQUENCY_TABLE_SIZE);
+            this.frequencyRange = this.data.getUint16(HEADER_OFFSET_FREQUENCY_RANGE);
+            this.frequencyUpperLimit = this.data.getUint16(HEADER_OFFSET_FREQUENCY_UPPER_LIMIT);
+            this.frequencyTableSize = this.data.getUint16(HEADER_OFFSET_FREQUENCY_TABLE_SIZE);
             this.frameCount = this.data.getUint32(HEADER_OFFSET_FRAME_COUNT);
 
             assert(this.magicNumber == MAGIC_NUMBER);
@@ -418,6 +425,7 @@ var wamCodec = wamCodec || {};
             assert(this.channelSize > 0);
             assert(this.sampleCount <= this.frequencyRange * this.frameCount);
             assert(this.frequencyRange > 0);
+            assert(this.frequencyUpperLimit <= this.frequencyRange);
             assert(this.frequencyTableSize > 0);
 
             this.setupWindowFunction();

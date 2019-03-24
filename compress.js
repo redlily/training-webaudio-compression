@@ -8,6 +8,7 @@ self.addEventListener("message", (message) => {
     let samplingRate = message.data["samplingRate"];
     let channelSize = message.data["channelSize"];
     let frequencyRange = message.data["frequencyRange"];
+    let frequencyUpperLimit = message.data["frequencyUpperLimit"];
     let frequencyTableSize = message.data["frequencyTableSize"];
     let originalSamplingRate = message.data["originalSamplingRate"];
     let originalChannelSize = message.data["originalChannelSize"];
@@ -49,11 +50,15 @@ self.addEventListener("message", (message) => {
     console.log(`sampling rate ${samplingRate}`);
     console.log(`channel size ${channelSize}`);
     console.log(`frequency range ${frequencyRange}`);
+    console.log(`frequency upper limit ${frequencyUpperLimit}`);
     console.log(`frequency table size ${frequencyTableSize}`);
     console.log(`sample count ${sampleCount}`);
 
     // エンコード
-    let encoder = new wamCodec.WamEncoder(samplingRate, channelSize, frequencyRange, frequencyTableSize, sampleCount);
+    let encoder = new wamCodec.WamEncoder(
+        samplingRate, channelSize,
+        frequencyRange, frequencyUpperLimit, frequencyTableSize,
+        sampleCount);
     for (let k = 0; k < (sampleCount / frequencyRange) - 1; ++k) {
         encoder.write(originalSampleData, frequencyRange * k, Math.min(frequencyRange, sampleCount - frequencyRange * (k + 1)));
         self.postMessage({

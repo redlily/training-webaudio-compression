@@ -21,6 +21,8 @@
     let samplingRateSelector;
     // 周波数レンジ選択
     let frequencyRangeSelector;
+    // MDCT処理レンジ選択
+    let frequencyUpperLimitSelector;
     // 周波数テーブル選択
     let frequencyTableSizeSelector;
     // 圧縮後のビットレート
@@ -46,6 +48,8 @@
         samplingRateSelector.addEventListener("change", onChangedSamplingRate);
         frequencyRangeSelector = document.getElementById("frequencyRangeSelector");
         frequencyRangeSelector.addEventListener("change", onChangedFrequencyRange);
+        frequencyUpperLimitSelector = document.getElementById("frequencyUpperLimitSelector");
+        frequencyUpperLimitSelector.addEventListener("change", onChangedFrequencyUpperLimit);
         frequencyTableSizeSelector = document.getElementById("frequencyTableSizeSelector");
         frequencyTableSizeSelector.addEventListener("change", onChangedFrequencyTableSize);
         compressedBitRateLabel = document.getElementById("compressedBitRateLabel");
@@ -123,8 +127,17 @@
         let value = this.options[this.selectedIndex].value;
         console.log(`Changed the frequency range from ${frequencyRange} to ${value}.`);
         frequencyRange = Number.parseFloat(value);
+        updateFrequencyUpperLimit();
         updateFrequencyTableSize();
         updateBitRateOfCompressedAudio();
+    }
+
+    // 周波数の上限が変更
+    function onChangedFrequencyUpperLimit(event) {
+        let value = frequencyUpperLimit;
+        updateFrequencyUpperLimit();
+        updateBitRateOfCompressedAudio();
+        console.log(`Changed the frequency upper limit from ${value} to ${frequencyUpperLimit}.`);
     }
 
     // 周波数テーブルサイズが変更
@@ -133,6 +146,13 @@
         updateFrequencyTableSize();
         updateBitRateOfCompressedAudio();
         console.log(`Changed the frequency table size from ${prev} to ${frequencyTableSize}.`);
+    }
+
+    // 周波数の上限を更新
+    function updateFrequencyUpperLimit() {
+        frequencyUpperLimit =
+            frequencyRange *
+            Number.parseFloat(frequencyUpperLimitSelector.options[frequencyUpperLimitSelector.selectedIndex].value) / 8;
     }
 
     // 周波数テーブルサイズの更新
@@ -150,8 +170,8 @@
         // (主音量 + 副音量(8チャネル) + 周波数フラグ + 周波数テーブル) * チャネル数
         let frameSize = 32 + 32
             + (Math.min(
-                1 * frequencyRange,
-                Math.ceil(Math.log2(frequencyRange) * frequencyTableSize / 32) * 32)
+                1 * frequencyUpperLimit,
+                Math.ceil(Math.ceil(Math.log2(frequencyUpperLimit)) * frequencyTableSize / 32) * 32)
                 + 4 * frequencyTableSize)
             * channelSize;
         compressedBitRateLabel.textContent = `${Math.round(frameSize * samplingRate / frequencyRange / 1000)} kbps`;
@@ -215,9 +235,10 @@
                 }
             });
             worker.postMessage({
-                "frequencyRange": frequencyRange,
                 "channelSize": channelSize,
                 "samplingRate": samplingRate,
+                "frequencyRange": frequencyRange,
+                "frequencyUpperLimit": frequencyUpperLimit,
                 "frequencyTableSize": frequencyTableSize,
                 "originalSamplingRate": audioBuffer.sampleRate,
                 "originalChannelSize": audioBuffer.numberOfChannels,
@@ -271,6 +292,8 @@
     const DEFAULT_CHANNEL_SIZE = 2;
     // デフォルト、周波数レンジ
     const DEFAULT_FREQUENCY_RANGE = 1024;
+    // デフォルト、周波数の上限
+    const DEFAULT_FREQUENCY_UPPER_LIMIT = DEFAULT_FREQUENCY_RANGE * 6 / 8;
     // デフォルト、周波数テーブルサイズ
     const DEFAULT_FREQUENCY_TABLE_SIZE = 192;
 
@@ -280,6 +303,8 @@
     let channelSize = DEFAULT_CHANNEL_SIZE;
     // 周波数レンジ
     let frequencyRange = DEFAULT_FREQUENCY_RANGE;
+    // 周波数の上限
+    let frequencyUpperLimit = DEFAULT_FREQUENCY_UPPER_LIMIT;
     // 周波数テーブルサイズ
     let frequencyTableSize = DEFAULT_FREQUENCY_TABLE_SIZE;
 

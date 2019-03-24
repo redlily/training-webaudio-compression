@@ -21,28 +21,29 @@ https://redlily.github.io/training-webaudio-compression
 
 ## データフォーマット
 
-### ヘッダ (HEADER)
+### ヘッダ
 
 |変数名|型|説明|
 |:---|:---|:---|
-|MAGIC_NUMBER|UINT32|データフォーマットの識別子、"WAD0"が固定値|
-|DATA_SIZE|UINT32|データのサイズ|
-|DATA_TYPE|UINT32|データのタイプ、現状は"SMD0"が固定値|
-|DATA_TYPE|UINT32|データフォーマットのバージョン現状は0のみ|
-|SAMPLE_RATE|UINT32|1秒間あたりのサンプリング数|
-|CHANNEL_SIZE|UINT32|チャネル数、1ならモノラル、2ならステレオ|
-|SAMPLE_COUNT|UINT32|データ全体でのサンプル数|
+|MAGIC_NUMBER|UINT32|マジックナンバー、"WAM0"が固定値|
+|DATA_SIZE|UINT32|データのバイトサイズ|
+|DATA_TYPE|UINT32|拡張用のデータタイプ、"SMD0"が固定値|
+|VERSION|UINT32|データのバージョン|
+|SAMPLING_RATE|UINT32|サンプリングレート|
+|CHANNEL_SIZE|UINT32|チャネル数、1がモノラル、2がステレオ|
+|SAMPLE_COUNT|UINT32|データに含まれるサンプル数|
+|FREQUENCY_RANGE|UINT16|周波数ブロックのサイズ|
+|FREQUENCY_UPPER_LIMIT|UINT16|周波数ブロックの上限値|
+|FREQUENCY_TABLE_SIZE|UINT16|周波数テーブルのサイズ|
+|-|UINT16|バイトアライメント調整用の領域、今後の拡張次第では何か数値が入るかも|
+|FRAME_COUNT|UINT32|データに含まれるフレーム数|
+|FRAME_DATA|FRAME[CHANNEL_SIZE * FRAME_COUNT]|フレーム配列、チャネル数が2の場合、左、右とフーレムが並ぶ|
 
-### フレーム (FRAME)
+#### フレーム
 
 |変数名|型|説明|
 |:---|:---|:---|
-|FREQUENCY_SCALE|UINT32|各周波数のスケール値|
-|FREQUENCY_DATA|FREQUENCY_DATA[CHANNEL_SIZE]|周波数データ|
-
-### 周波数データ (FREQUENCY_DATA)
-
-|変数名|型|説明|
-|:---|:---|:---|
-|FREQUENCY_FLAGS|UINT32[FREQUENCY_RANGE / 32]|各周波数のデータの有無を収納するフラグ配列|
-|FREQUENCY_TABLE|UINT32[FREQUENCY_TABLES_IZE]|周波数テーブル、値は上位1ビットが符号、残りのビットが指数|
+|MASTER_SCALE|UINT32|このフーレムの主音量|
+|SUB_SCALES|UINT4[8]|8つの周波数帯用の音量を調整するためのスケール値|
+|ENABLE_FREQUENCIES|1bit[FREQUENCY_UPPER_LIMIT]<br>or<br>ceil(log_2(FREQUENCY_UPPER_LIMIT))bit[FREQUENCY_TABLE_SIZE]|周波数の有効無効を収納した1bitのフラグ配列、もしくは有効な周波数のインデックスを収納した配列<br>バイト数の小さい方を使用し4バイトアライメントに適合するサイズにする|
+|FREQUENCY_VALUES|4bit[FREQUENCY_TABLE_SIZE]|有効な周波数の対数で符号化された数値|

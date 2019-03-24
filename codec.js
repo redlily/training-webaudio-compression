@@ -269,7 +269,6 @@ var wamCodec = wamCodec || {};
                             subScale = power;
                         }
                     }
-                    console.log(j == 0 ? 0 : this.subScaleStart << (j - 1), this.subScaleStart << j);
                     let power = Math.floor(Math.min(-Math.log(subScale / masterScale) / Math.log(BASE_OF_LOGARITHM) * 2, 15));
                     this.subScales[j] = power;
                     this.writeHalfUbyte(dataOffset + FRAME_OFFSET_SUB_SCALE + (j >>> 1), 0x1 & j, power);

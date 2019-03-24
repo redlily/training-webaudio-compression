@@ -100,7 +100,7 @@ var wamCodec = wamCodec || {};
         getDataOffset(frame, channel) {
             return HEADER_OFFSET_DATA +
                 (FRAME_OFFSET_DATA +
-                    (this.isIndexMode ? (this.indicesSize / 8) : (this.frequencyRange / 8)) +
+                    (this.isIndexMode ? (this.indicesSize / 8) : (this.frequencyUpperLimit / 8)) +
                     (this.frequencyTableSize >>> 1)) *
                 (this.channelSize * frame + channel);
         }
@@ -145,14 +145,14 @@ var wamCodec = wamCodec || {};
 
             this.setupWindowFunction();
 
-            this.subScales = new Uint8Array(Math.min(Math.ceil(Math.log2(this.frequencyUpperLimit)), 8));
-            this.subScaleStart = 1 << Math.max(Math.ceil(Math.log2(this.frequencyRange)) - 8, 1);
-            this.indexBitSize = Math.ceil(Math.log2(this.frequencyRange));
+            this.indexBitSize = Math.ceil(Math.log2(this.frequencyUpperLimit));
+            this.subScales = new Uint8Array(Math.min(this.indexBitSize, 8));
+            this.subScaleStart = this.frequencyUpperLimit / (1 << Math.min(Math.ceil(Math.log2(this.frequencyUpperLimit)), 7));
             this.indicesSize = Math.ceil(this.indexBitSize * this.frequencyTableSize / 32) * 32;
-            this.isIndexMode = this.frequencyRange > this.indicesSize;
-            this.frequencyFlags = new Uint32Array(this.frequencyRange / 32);
+            this.isIndexMode = (1 << this.indexBitSize) > this.indicesSize;
+            this.frequencyFlags = new Uint32Array(this.frequencyUpperLimit / 32);
             this.frequencies = new Float32Array(this.frequencyRange);
-            this.frequencyPowers = new Float32Array(this.frequencyRange);
+            this.frequencyPowers = new Float32Array(this.frequencyUpperLimit);
             this.samples = new Float32Array(this.frequencyRange << 1);
             this.prevInputs = new Array(this.channelSize);
             for (let i = 0; i < this.channelSize; ++i) {
@@ -252,7 +252,7 @@ var wamCodec = wamCodec || {};
 
                 // 振幅のマスタスケールを書き出し
                 let masterScale = 1;
-                for (let j = 0; j < this.frequencyRange; ++j) {
+                for (let j = 0; j < this.frequencyUpperLimit; ++j) {
                     let power = Math.abs(this.frequencies[j]);
                     if (power > masterScale) {
                         masterScale = power;
@@ -263,12 +263,13 @@ var wamCodec = wamCodec || {};
                 // 振幅のサブスケールを書き出す
                 for (let j = 0; j < this.subScales.length; ++j) {
                     let subScale = 1;
-                    for (let k = this.subScaleStart << (j - 1); k < this.subScaleStart << j && k < this.frequencyRange; ++k) {
+                    for (let k = j == 0 ? 0 : this.subScaleStart << (j - 1); k < this.subScaleStart << j && k < this.frequencyUpperLimit; ++k) {
                         let power = Math.abs(this.frequencies[k]);
                         if (power > subScale) {
                             subScale = power;
                         }
                     }
+                    console.log(j == 0 ? 0 : this.subScaleStart << (j - 1), this.subScaleStart << j);
                     let power = Math.floor(Math.min(-Math.log(subScale / masterScale) / Math.log(BASE_OF_LOGARITHM) * 2, 15));
                     this.subScales[j] = power;
                     this.writeHalfUbyte(dataOffset + FRAME_OFFSET_SUB_SCALE + (j >>> 1), 0x1 & j, power);
@@ -277,7 +278,7 @@ var wamCodec = wamCodec || {};
                 // 各周波数のパワーを計算しておく
                 for (let j = 0; j < this.subScales.length; ++j) {
                     let subScale = this.subScales[j];
-                    for (let k = this.subScaleStart << (j - 1); k < this.subScaleStart << j && k < this.frequencyRange; ++k) {
+                    for (let k = j == 0 ? 0 : this.subScaleStart << (j - 1); k < this.subScaleStart << j && k < this.frequencyUpperLimit; ++k) {
                         let power = Math.abs(this.frequencies[k]) / masterScale;
                         this.frequencyPowers[k] = power > Math.pow(BASE_OF_LOGARITHM, -7 - subScale * 0.5) ? power : 0;
                     }
@@ -288,7 +289,7 @@ var wamCodec = wamCodec || {};
                 let writeCount = 0;
                 while (writeCount < this.frequencyTableSize) {
                     let sumPower = 0;
-                    for (let j = 0; j < this.frequencyRange; ++j) {
+                    for (let j = 0; j < this.frequencyUpperLimit; ++j) {
                         sumPower += this.frequencyPowers[j];
                     }
                     if (sumPower <= 0) {
@@ -296,9 +297,9 @@ var wamCodec = wamCodec || {};
                     }
 
                     let sum = 0;
-                    let maxIndex = this.frequencyRange - 1;
+                    let maxIndex = this.frequencyUpperLimit - 1;
                     let maxPower = this.frequencyPowers[maxIndex];
-                    for (let j = this.frequencyRange - 1; j >= 0 && writeCount < this.frequencyTableSize; --j) {
+                    for (let j = this.frequencyUpperLimit - 1; j >= 0 && writeCount < this.frequencyTableSize; --j) {
                         let power = this.frequencyPowers[j];
                         sum += power;
 
@@ -353,7 +354,7 @@ var wamCodec = wamCodec || {};
                 let frequencyOffset = 0;
                 for (let j = 0; j < this.subScales.length; ++j) {
                     let subScale = this.subScales[j];
-                    for (let k = this.subScaleStart << (j - 1); k < this.subScaleStart << j && k < this.frequencyRange; ++k) {
+                    for (let k = j == 0 ? 0 : this.subScaleStart << (j - 1); k < this.subScaleStart << j && k < this.frequencyRange; ++k) {
                         if ((this.frequencyFlags[Math.floor(k / 32)] >>> (k % 32)) & 0x1 != 0) {
                             let value = this.frequencies[k] / masterScale;
                             let signed = value >= 0 ? 0x0 : 0x8;
@@ -430,12 +431,12 @@ var wamCodec = wamCodec || {};
 
             this.setupWindowFunction();
 
-            this.subScales = new Uint8Array(Math.min(Math.round(Math.log2(this.frequencyRange)), 8));
-            this.subScaleStart = 1 << Math.max(Math.round(Math.log2(this.frequencyRange)) - 8, 1);
-            this.indexBitSize = Math.round(Math.log2(this.frequencyRange));
+            this.indexBitSize = Math.ceil(Math.log2(this.frequencyUpperLimit));
+            this.subScales = new Uint8Array(Math.min(this.indexBitSize, 8));
+            this.subScaleStart = this.frequencyUpperLimit / (1 << Math.min(Math.ceil(Math.log2(this.frequencyUpperLimit)), 7));
             this.indicesSize = Math.ceil(this.indexBitSize * this.frequencyTableSize / 32) * 32;
-            this.isIndexMode = this.frequencyRange > this.indicesSize;
-            this.frequencyFlags = new Uint32Array(this.frequencyRange / 32);
+            this.isIndexMode = (1 << this.indexBitSize) > this.indicesSize;
+            this.frequencyFlags = new Uint32Array(this.frequencyUpperLimit / 32);
             this.frequencies = new Float32Array(this.frequencyRange);
             this.samples = new Float32Array(this.frequencyRange << 1);
             this.prevOutputs = new Array(this.channelSize);
@@ -540,7 +541,7 @@ var wamCodec = wamCodec || {};
                 let frequencyOffset = 0;
                 for (let j = 0; j < this.subScales.length; ++j) {
                     let subScale = this.subScales[j];
-                    for (let k = this.subScaleStart << (j - 1); k < this.subScaleStart << j && k < this.frequencyRange; ++k) {
+                    for (let k = j == 0 ? 0 : this.subScaleStart << (j - 1); k < this.subScaleStart << j && k < this.frequencyUpperLimit; ++k) {
                         if ((this.frequencyFlags[Math.floor(k / 32)] >>> k % 32) & 0x1 != 0) {
                             let value = this.readHalfUbyte(dataOffset + (frequencyOffset >>> 1), 0x1 & frequencyOffset);
                             let signed = 0x8 & value;

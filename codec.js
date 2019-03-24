@@ -349,9 +349,9 @@ var wamCodec = wamCodec || {};
                     let subScale = this.subScales[j];
                     for (let k = this.subScaleStart << (j - 1); k < this.subScaleStart << j && k < this.frequencyRange; ++k) {
                         if ((this.frequencyFlags[Math.floor(k / 32)] >>> (k % 32)) & 0x1 != 0) {
-                            let value = this.frequencies[k] / (masterScale * Math.pow(BASE_OF_LOGARITHM, -subScale * 0.5));
+                            let value = this.frequencies[k] / masterScale;
                             let signed = value >= 0 ? 0x0 : 0x8;
-                            let power = Math.ceil(Math.min(-Math.log(Math.abs(value)) / Math.log(BASE_OF_LOGARITHM), 7));
+                            let power = Math.ceil(Math.min(-Math.log(Math.abs(value)) / Math.log(BASE_OF_LOGARITHM) - subScale * 0.5, 7));
                             this.writeHalfUbyte(
                                 dataOffset + (frequencyOffset >>> 1),
                                 0x1 & frequencyOffset,

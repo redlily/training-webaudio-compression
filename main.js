@@ -250,6 +250,8 @@
 
     // テーブルサイズマップ
     const FREQUENCY_TABLE_SIZES = [
+        8,
+        12,
         16,
         24,
         32,
@@ -339,7 +341,7 @@
                     let samples = sampleData[i];
                     for (let j = sampleCount - 1; j >= 0; --j) {
                         let sample = samples[j];
-                        for (let k = Math.round(j * sampleTimes); k < Math.round((j + 1) * sampleTimes); ++k) {
+                        for (let k = Math.floor(j * sampleTimes); k < Math.floor(j * sampleTimes) + sampleTimes; ++k) {
                             samples[k] = sample;
                         }
                     }

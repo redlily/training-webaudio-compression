@@ -295,7 +295,7 @@
     // デフォルト、周波数の上限
     const DEFAULT_FREQUENCY_UPPER_LIMIT = DEFAULT_FREQUENCY_RANGE * 6 / 8;
     // デフォルト、周波数テーブルサイズ
-    const DEFAULT_FREQUENCY_TABLE_SIZE = 128;
+    const DEFAULT_FREQUENCY_TABLE_SIZE = 192;
 
     // サンプリングレート
     let samplingRate = DEFAULT_SAMPLING_RATE;

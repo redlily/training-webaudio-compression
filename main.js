@@ -330,7 +330,9 @@
             return;
         }
         try {
-            audioContext = new AudioContext({"sampleRate": sampleRate});
+            audioContext = window.AudioContext != null ?
+                new window.AudioContext({"sampleRate": sampleRate}) :
+                new window.webkitAudioContext();
         } catch (e) {
             console.error(e);
         }

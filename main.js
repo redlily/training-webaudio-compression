@@ -86,8 +86,10 @@
         playButton.disabled = "disabled";
         downloadButton.style.visibility = "hidden";
 
-        pauseAudio();
-        initializeAudio();
+        if (isInitializedAudio()) {
+            pauseAudio();
+            initializeAudio();
+        }
 
         originalFile = event.target.files[0];
 

@@ -194,16 +194,21 @@
         // ファイルの読み込み
         let fileReader = new FileReader();
         fileReader.addEventListener("loadend", (event) => {
-            audioContext.decodeAudioData(fileReader.result).then((audioBuffer) => {
-                return encodeAudioData(audioBuffer);
-            }).then((encodedBuffer) => {
-                makeDownloadLink(encodedBuffer);
-                makeCompressedAudioNode(encodedBuffer);
+            try {
+                audioContext.decodeAudioData(fileReader.result, (audioBuffer) => {
+                    encodeAudioData(audioBuffer).then((encodedBuffer) => {
+                        makeDownloadLink(encodedBuffer);
+                        makeCompressedAudioNode(encodedBuffer);
+                        compressButton.disabled = "";
+                        playButton.disabled = "";
+                    }).catch((error) => {
+                        compressButton.disabled = "";
+                    });
+                });
+            } catch (error) {
                 compressButton.disabled = "";
-                playButton.disabled = "";
-            }).catch((error) => {
-                compressButton.disabled = "";
-            });
+            }
+
         });
         fileReader.readAsArrayBuffer(originalFile);
     }

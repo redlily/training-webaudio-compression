@@ -5,21 +5,21 @@ importScripts("codec.js");
 
 self.addEventListener("message", (message) => {
     // パラメータ取得
-    let samplingRate = message.data["samplingRate"];
-    let channelSize = message.data["channelSize"];
+    let sampleRate = message.data["sampleRate"];
+    let channelSize = message.data["numChannels"];
     let frequencyRange = message.data["frequencyRange"];
     let frequencyUpperLimit = message.data["frequencyUpperLimit"];
     let frequencyTableSize = message.data["frequencyTableSize"];
-    let originalSamplingRate = message.data["originalSamplingRate"];
+    let originalSampleRate = message.data["originalSampleRate"];
     let originalChannelSize = message.data["originalChannelSize"];
     let originalSampleData = message.data["originalSampleData"];
     let originalSampleCount = originalSampleData[0].length;
     let sampleCount = originalSampleCount;
 
     // サンプリングレートが元データと異なる場合
-    if (samplingRate < originalSamplingRate) {
+    if (sampleRate < originalSampleRate) {
         // 減らす場合
-        let times = originalSamplingRate / samplingRate;
+        let times = originalSampleRate / sampleRate;
         sampleCount = Math.floor(sampleCount / times);
         for (let i = 0; i < originalChannelSize; ++i) {
             let samples = originalSampleData[i];
@@ -28,9 +28,9 @@ self.addEventListener("message", (message) => {
                 samples[j] = samples[Math.floor(j * times)];
             }
         }
-    } else if (samplingRate > originalSamplingRate) {
+    } else if (sampleRate > originalSampleRate) {
         // 増やす場合、増やさない
-        samplingRate = originalSamplingRate;
+        sampleRate = originalSampleRate;
     }
 
     // チャネル数が元データと異なる場合
@@ -47,7 +47,7 @@ self.addEventListener("message", (message) => {
     }
 
     console.log(`encoding`);
-    console.log(`sampling rate ${samplingRate}`);
+    console.log(`sample rate ${sampleRate}`);
     console.log(`channel size ${channelSize}`);
     console.log(`frequency range ${frequencyRange}`);
     console.log(`frequency upper limit ${frequencyUpperLimit}`);
@@ -56,7 +56,7 @@ self.addEventListener("message", (message) => {
 
     // エンコード
     let encoder = new wamCodec.WamEncoder(
-        samplingRate, channelSize,
+        sampleRate, channelSize,
         frequencyRange, frequencyUpperLimit, frequencyTableSize,
         sampleCount);
     for (let k = 0; k < (sampleCount / frequencyRange) - 1; ++k) {

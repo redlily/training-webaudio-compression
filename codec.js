@@ -4,9 +4,9 @@ var wamCodec = wamCodec || {};
 
 (function () {
 
-    // マジックナンバー Web Audio compression Media format
+    // マジックナンバー ORPH sound data format
     const MAGIC_NUMBER =
-        ("W".charCodeAt(0)) | ("A".charCodeAt(0) << 8) | ("M".charCodeAt(0) << 16) | ("0".charCodeAt(0) << 24);
+        ("O".charCodeAt(0)) | ("R".charCodeAt(0) << 8) | ("P".charCodeAt(0) << 16) | ("H".charCodeAt(0) << 24);
     // ファイルタイプ、 Simple Modified discrete cosine transform Data
     const FILE_TYPE_SMD0 =
         ("S".charCodeAt(0)) | ("M".charCodeAt(0) << 8) | ("D".charCodeAt(0) << 16) | ("0".charCodeAt(0) << 24);
@@ -22,21 +22,21 @@ var wamCodec = wamCodec || {};
     // ヘッダオフセット、バージョン
     const HEADER_OFFSET_VERSION = 12;
     // ヘッダオフセット、サンプリングレート
-    const HEADER_OFFSET_SAMPLING_RATE = 16;
-    // ヘッダオフセット、チャネル数、1がモノラル、2がステレオ
-    const HEADER_OFFSET_CHANNEL_SIZE = 20;
+    const HEADER_OFFSET_SAMPLE_RATE = 16;
     // ヘッダオフセット、サンプル数
-    const HEADER_OFFSET_SAMPLE_COUNT = 24;
-    // ヘッダオフセット、周波数レンジ、2のべき乗の値を設定する必要がある
-    const HEADER_OFFSET_FREQUENCY_RANGE = 28;
-    // ヘッダオフセット、周波数の上限
-    const HEADER_OFFSET_FREQUENCY_UPPER_LIMIT = 30;
-    // ヘッダオフセット、周波数テーブルサイズ、32で割れる数を指定すると効率が良い
-    const HEADER_OFFSET_FREQUENCY_TABLE_SIZE = 32;
+    const HEADER_OFFSET_SAMPLE_COUNT = 20;
     // ヘッダオフセット、フレーム数
-    const HEADER_OFFSET_FRAME_COUNT = 36;
+    const HEADER_OFFSET_FRAME_COUNT = 24;
+    // ヘッダオフセット、チャネル数、1がモノラル、2がステレオ
+    const HEADER_OFFSET_CHANNEL_SIZE = 28;
+    // ヘッダオフセット、周波数レンジ、2のべき乗の値を設定する必要がある
+    const HEADER_OFFSET_FREQUENCY_RANGE = 30;
+    // ヘッダオフセット、周波数の上限
+    const HEADER_OFFSET_FREQUENCY_UPPER_LIMIT = 32;
+    // ヘッダオフセット、周波数テーブルサイズ、32で割れる数を指定すると効率が良い
+    const HEADER_OFFSET_FREQUENCY_TABLE_SIZE = 34;
     // ヘッダオフセット、データ
-    const HEADER_OFFSET_DATA = 40;
+    const HEADER_OFFSET_DATA = 36;
 
     // フレームヘッダ、オフセット、振幅のメインスケール
     const FRAME_OFFSET_MASTER_SCALE = 0;
@@ -58,7 +58,8 @@ var wamCodec = wamCodec || {};
 
         constructor() {
             this.data = null;
-            this.channelSize = 0;
+            this.frameCount = 0;
+            this.numChannels = 0;
             this.frequencyRange = 0;
             this.frequencyUpperLimit = 0;
             this.frequencyTableSize = 0;
@@ -102,128 +103,75 @@ var wamCodec = wamCodec || {};
                 (FRAME_OFFSET_DATA +
                     (this.isIndexMode ? (this.indicesSize / 8) : (this.frequencyUpperLimit / 8)) +
                     (this.frequencyTableSize >>> 1)) *
-                (this.channelSize * frame + channel);
+                (this.numChannels * frame + channel);
         }
     }
 
     // Web Audio Media エンコーダ
     class WamEncoder extends WamCoder {
 
-        constructor(samplingRate, channelSize, frequencyRange, frequencyUpperLimit, frequencyTableSize, initSampleCount = 4096) {
+        constructor(sampleRate, numChannels, frequencyRange, frequencyUpperLimit, frequencyTableSize, initSampleCount = 4096) {
             super();
 
-            this.samplingRate = samplingRate;
-            this.channelSize = channelSize;
+            this.sampleRate = sampleRate;
+            this.numChannels = numChannels;
             this.frequencyRange = frequencyRange != null ? frequencyRange : 1024;
             this.frequencyUpperLimit = frequencyUpperLimit != null ? frequencyUpperLimit : this.frequencyRange;
             this.frequencyTableSize = frequencyTableSize != null ? frequencyTableSize : this.frequencyRange >>> 2;
 
-            assert(this.samplingRate > 0);
-            assert(this.channelSize > 0);
+            assert(this.sampleRate > 0);
+            assert(this.numChannels > 0);
             assert(this.frequencyRange > 0);
             assert(this.frequencyRange % 32 == 0); // 効率を重視して32の倍数である必要がある
             assert(this.frequencyUpperLimit <= frequencyRange);
             assert(this.frequencyTableSize > 0);
-            assert(this.frequencyTableSize % 4 == 0); // バイト境界を考慮して8の倍数である必要がある
+            assert(this.frequencyTableSize % 8 == 0); // バイト境界を考慮して8の倍数である必要がある
 
             let initBufferSize = HEADER_OFFSET_DATA +
                 (FRAME_OFFSET_DATA + (this.frequencyRange / 32) * 4 + this.frequencyTableSize) *
-                this.channelSize * Math.ceil(initSampleCount / this.frequencyRange);
+                this.numChannels * Math.ceil(initSampleCount / this.frequencyRange);
 
             this.data = new DataView(new ArrayBuffer(initBufferSize));
             this.data.setUint32(HEADER_OFFSET_MAGIC_NUMBER, MAGIC_NUMBER);
             this.data.setUint32(HEADER_OFFSET_DATA_SIZE, 0);
             this.data.setUint32(HEADER_OFFSET_DATA_TYPE, FILE_TYPE_SMD0);
             this.data.setUint32(HEADER_OFFSET_VERSION, SMD0_VERSION);
-            this.data.setUint32(HEADER_OFFSET_SAMPLING_RATE, this.samplingRate);
-            this.data.setUint32(HEADER_OFFSET_CHANNEL_SIZE, this.channelSize);
+            this.data.setUint32(HEADER_OFFSET_SAMPLE_RATE, this.sampleRate);
             this.data.setUint32(HEADER_OFFSET_SAMPLE_COUNT, 0);
+            this.data.setUint32(HEADER_OFFSET_FRAME_COUNT, 0);
+            this.data.setUint16(HEADER_OFFSET_CHANNEL_SIZE, this.numChannels);
             this.data.setUint16(HEADER_OFFSET_FREQUENCY_RANGE, this.frequencyRange);
             this.data.setUint16(HEADER_OFFSET_FREQUENCY_UPPER_LIMIT, this.frequencyUpperLimit);
             this.data.setUint16(HEADER_OFFSET_FREQUENCY_TABLE_SIZE, this.frequencyTableSize);
-            this.data.setUint32(HEADER_OFFSET_FRAME_COUNT, 0);
 
             this.setupWindowFunction();
 
             this.indexBitSize = Math.ceil(Math.log2(this.frequencyUpperLimit));
-            this.subScales = new Uint8Array(Math.min(this.indexBitSize, 8));
-            this.subScaleStart = this.frequencyUpperLimit / (1 << Math.min(Math.ceil(Math.log2(this.frequencyUpperLimit)), 7));
             this.indicesSize = Math.ceil(this.indexBitSize * this.frequencyTableSize / 32) * 32;
             this.isIndexMode = (1 << this.indexBitSize) > this.indicesSize;
+            this.subScales = new Uint8Array(Math.min(this.indexBitSize, 8));
+            this.subScaleStart = this.frequencyUpperLimit / (1 << Math.min(Math.ceil(Math.log2(this.frequencyUpperLimit)), 7));
             this.frequencyFlags = new Uint32Array(this.frequencyUpperLimit / 32);
             this.frequencies = new Float32Array(this.frequencyRange);
             this.frequencyPowers = new Float32Array(this.frequencyUpperLimit);
             this.samples = new Float32Array(this.frequencyRange << 1);
-            this.prevInputs = new Array(this.channelSize);
-            for (let i = 0; i < this.channelSize; ++i) {
+            this.prevInputs = new Array(this.numChannels);
+            for (let i = 0; i < this.numChannels; ++i) {
                 this.prevInputs[i] = new Float32Array(this.frequencyRange);
             }
-            this.frameCount = 0;
-            this.workBuffers = new Array(this.channelSize);
-            for (let i = 0; i < this.channelSize; ++i) {
+            this.workBuffers = new Array(this.numChannels);
+            for (let i = 0; i < this.numChannels; ++i) {
                 this.workBuffers[i] = new Float32Array(this.frequencyRange);
             }
             this.workBufferOffset = 0;
         }
 
-        write(inputData, start = 0, length = this.frequencyRange) {
-            assert(inputData.length >= this.channelSize);
-
-            // 書き込み出来ていないサンプルを書き込む
-            if (this.workBufferOffset > 0) {
-                let writeSize = Math.min(this.frequencyRange - this.workBufferOffset, length);
-                for (let i = 0; i < this.channelSize; ++i) {
-                    let input = inputData[i];
-                    let workBuffer = this.workBuffers[i];
-                    for (let j = 0; j < writeSize; ++j) {
-                        workBuffer[this.workBufferOffset + j] = input[start + j];
-                    }
-                }
-                start += writeSize;
-                length -= writeSize;
-                this.workBufferOffset += writeSize;
-                if (this.workBufferOffset >= this.frequencyRange) {
-                    this.writeFrame(this.workBuffers);
-                    this.workBufferOffset = 0;
-                }
-            }
-
-            // 入力バッファをフレーム単位で読み込む
-            while (length >= this.frequencyRange) {
-                this.writeFrame(inputData, start);
-                start += this.frequencyRange;
-                length -= this.frequencyRange;
-            }
-
-            // まだ入力バッファに書き込むデータが残っている場合
-            if (length > 0) {
-                for (let i = 0; i < this.channelSize; ++i) {
-                    let input = inputData[i];
-                    let workBuffer = this.workBuffers[i];
-                    for (let j = 0; j < length; ++j) {
-                        workBuffer[j] = input[start + j];
-                    }
-                }
-                this.workBufferOffset = length;
-            }
-        }
-
-        flush() {
-            if (this.workBufferOffset > 0) {
-                for (let i = 0; i < this.channelSize; ++i) {
-                    this.workBuffers.fill(0, this.workBufferOffset, this.frequencyRange);
-                }
-                this.writeFrame(this.workBuffers);
-                this.workBufferOffset = 0;
-            }
-        }
-
         writeFrame(inputData, start = 0, length = this.frequencyRange) {
-            assert(inputData.length >= this.channelSize);
+            assert(inputData.length >= this.numChannels);
             assert(length <= this.frequencyRange && length >= 0);
 
             this.nextFrame();
-            for (let i = 0; i < this.channelSize; ++i) {
+            for (let i = 0; i < this.numChannels; ++i) {
                 let input = inputData[i];
                 let dataOffset = this.getDataOffset(this.frameCount - 1, i);
 
@@ -239,7 +187,7 @@ var wamCodec = wamCodec || {};
                     this.samples[this.frequencyRange + j] = value;
                     prevInput[j] = value;
                 }
-                for (let j = length; j < this.frequencyFlags; ++j) {
+                for (let j = length; j < this.frequencyRange; ++j) {
                     this.samples[this.frequencyRange + j] = 0;
                     prevInput[j] = 0;
                 }
@@ -379,6 +327,58 @@ var wamCodec = wamCodec || {};
             }
         }
 
+        write(inputData, start = 0, length = this.frequencyRange) {
+            assert(inputData.length >= this.numChannels);
+
+            // 書き込み出来ていないサンプルを書き込む
+            if (this.workBufferOffset > 0) {
+                let writeSize = Math.min(this.frequencyRange - this.workBufferOffset, length);
+                for (let i = 0; i < this.numChannels; ++i) {
+                    let input = inputData[i];
+                    let workBuffer = this.workBuffers[i];
+                    for (let j = 0; j < writeSize; ++j) {
+                        workBuffer[this.workBufferOffset + j] = input[start + j];
+                    }
+                }
+                start += writeSize;
+                length -= writeSize;
+                this.workBufferOffset += writeSize;
+                if (this.workBufferOffset >= this.frequencyRange) {
+                    this.writeFrame(this.workBuffers);
+                    this.workBufferOffset = 0;
+                }
+            }
+
+            // 入力バッファをフレーム単位で読み込む
+            while (length >= this.frequencyRange) {
+                this.writeFrame(inputData, start);
+                start += this.frequencyRange;
+                length -= this.frequencyRange;
+            }
+
+            // まだ入力バッファに書き込むデータが残っている場合
+            if (length > 0) {
+                for (let i = 0; i < this.numChannels; ++i) {
+                    let input = inputData[i];
+                    let workBuffer = this.workBuffers[i];
+                    for (let j = 0; j < length; ++j) {
+                        workBuffer[j] = input[start + j];
+                    }
+                }
+                this.workBufferOffset = length;
+            }
+        }
+
+        flush() {
+            if (this.workBufferOffset > 0) {
+                for (let i = 0; i < this.numChannels; ++i) {
+                    this.workBuffers[i].fill(0, this.workBufferOffset, this.frequencyRange);
+                }
+                this.writeFrame(this.workBuffers);
+                this.workBufferOffset = 0;
+            }
+        }
+
         getDataSize() {
             return this.getDataOffset(this.frameCount, 0);
         }
@@ -409,21 +409,21 @@ var wamCodec = wamCodec || {};
             this.fileSize = this.data.getUint32(HEADER_OFFSET_DATA_SIZE);
             this.fileType = this.data.getUint32(HEADER_OFFSET_DATA_TYPE);
             this.version = this.data.getUint32(HEADER_OFFSET_VERSION);
-            this.samplingRate = this.data.getUint32(HEADER_OFFSET_SAMPLING_RATE);
-            this.channelSize = this.data.getUint32(HEADER_OFFSET_CHANNEL_SIZE);
+            this.sampleRate = this.data.getUint32(HEADER_OFFSET_SAMPLE_RATE);
             this.sampleCount = this.data.getUint32(HEADER_OFFSET_SAMPLE_COUNT);
+            this.frameCount = this.data.getUint32(HEADER_OFFSET_FRAME_COUNT);
+            this.numChannels = this.data.getUint16(HEADER_OFFSET_CHANNEL_SIZE);
             this.frequencyRange = this.data.getUint16(HEADER_OFFSET_FREQUENCY_RANGE);
             this.frequencyUpperLimit = this.data.getUint16(HEADER_OFFSET_FREQUENCY_UPPER_LIMIT);
             this.frequencyTableSize = this.data.getUint16(HEADER_OFFSET_FREQUENCY_TABLE_SIZE);
-            this.frameCount = this.data.getUint32(HEADER_OFFSET_FRAME_COUNT);
 
             assert(this.magicNumber == MAGIC_NUMBER);
             assert(this.fileSize <= data.byteLength);
             assert(this.fileType == FILE_TYPE_SMD0);
             assert(this.version == 0);
-            assert(this.samplingRate > 0);
-            assert(this.channelSize > 0);
+            assert(this.sampleRate > 0);
             assert(this.sampleCount <= this.frequencyRange * this.frameCount);
+            assert(this.numChannels > 0);
             assert(this.frequencyRange > 0);
             assert(this.frequencyUpperLimit <= this.frequencyRange);
             assert(this.frequencyTableSize > 0);
@@ -431,32 +431,32 @@ var wamCodec = wamCodec || {};
             this.setupWindowFunction();
 
             this.indexBitSize = Math.ceil(Math.log2(this.frequencyUpperLimit));
-            this.subScales = new Uint8Array(Math.min(this.indexBitSize, 8));
-            this.subScaleStart = this.frequencyUpperLimit / (1 << Math.min(Math.ceil(Math.log2(this.frequencyUpperLimit)), 7));
             this.indicesSize = Math.ceil(this.indexBitSize * this.frequencyTableSize / 32) * 32;
             this.isIndexMode = (1 << this.indexBitSize) > this.indicesSize;
+            this.subScales = new Uint8Array(Math.min(this.indexBitSize, 8));
+            this.subScaleStart = this.frequencyUpperLimit / (1 << Math.min(Math.ceil(Math.log2(this.frequencyUpperLimit)), 7));
             this.frequencyFlags = new Uint32Array(this.frequencyUpperLimit / 32);
             this.frequencies = new Float32Array(this.frequencyRange);
             this.samples = new Float32Array(this.frequencyRange << 1);
-            this.prevOutputs = new Array(this.channelSize);
-            for (let i = 0; i < this.channelSize; ++i) {
+            this.prevOutputs = new Array(this.numChannels);
+            for (let i = 0; i < this.numChannels; ++i) {
                 this.prevOutputs[i] = new Float32Array(this.frequencyRange);
             }
             this.currentFrame = 0;
-            this.workBuffers = new Array(this.channelSize);
-            for (let i = 0; i < this.channelSize; ++i) {
+            this.workBuffers = new Array(this.numChannels);
+            for (let i = 0; i < this.numChannels; ++i) {
                 this.workBuffers[i] = new Float32Array(this.frequencyRange);
             }
             this.workBufferOffset = this.frequencyRange;
         }
 
         read(outputData, start = 0, length = this.frequencyRange) {
-            assert(outputData.length >= this.channelSize);
+            assert(outputData.length >= this.numChannels);
 
             // 書き込み出来ていないサンプルを出力バッファ書き込む
             if (this.workBufferOffset < this.frequencyRange) {
                 let writeSize = Math.min(length, this.frequencyRange - this.workBufferOffset);
-                for (let i = 0; i < this.channelSize; ++i) {
+                for (let i = 0; i < this.numChannels; ++i) {
                     let output = outputData[i];
                     let workBuffer = this.workBuffers[i];
                     for (let j = 0; j < writeSize; ++j) {
@@ -478,7 +478,7 @@ var wamCodec = wamCodec || {};
             // まだ出力バッファに書き込みきれていない場合
             if (length > 0) {
                 this.readFrame(this.workBuffers, 0);
-                for (let i = 0; i < this.channelSize; ++i) {
+                for (let i = 0; i < this.numChannels; ++i) {
                     let output = outputData[i];
                     let workBuffer = this.workBuffers[i];
                     for (let j = 0; j < length; ++j) {
@@ -490,10 +490,10 @@ var wamCodec = wamCodec || {};
         }
 
         readFrame(outputData, start = 0, length = this.frequencyRange) {
-            assert(outputData.length >= this.channelSize);
+            assert(outputData.length >= this.numChannels);
             assert(length <= this.frequencyRange && length >= 0);
 
-            for (let i = 0; i < this.channelSize; ++i) {
+            for (let i = 0; i < this.numChannels; ++i) {
                 let output = outputData[i];
                 let dataOffset = this.getDataOffset(this.currentFrame, i);
 

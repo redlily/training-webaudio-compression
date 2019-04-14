@@ -18,7 +18,7 @@
     // チャネル数選択
     let channelSizeSelector;
     // サンプルレート選択
-    let samplingRateSelector;
+    let sampleRateSelector;
     // 周波数レンジ選択
     let frequencyRangeSelector;
     // MDCT処理レンジ選択
@@ -44,8 +44,8 @@
         alreadyCompressedDataLabel.style.display = "none";
         channelSizeSelector = document.getElementById("channelSizeSelector");
         channelSizeSelector.addEventListener("change", onChangedChannelSize);
-        samplingRateSelector = document.getElementById("samplingRateSelector");
-        samplingRateSelector.addEventListener("change", onChangedSamplingRate);
+        sampleRateSelector = document.getElementById("sampleRateSelector");
+        sampleRateSelector.addEventListener("change", onChangedSampleRate);
         frequencyRangeSelector = document.getElementById("frequencyRangeSelector");
         frequencyRangeSelector.addEventListener("change", onChangedFrequencyRange);
         frequencyUpperLimitSelector = document.getElementById("frequencyUpperLimitSelector");
@@ -69,7 +69,7 @@
     function terminateUI() {
         openFileButton.removeEventListener("change", onChangedSourceFile);
         channelSizeSelector.removeEventListener("change", onChangedChannelSize);
-        samplingRateSelector.removeEventListener("change", onChangedSamplingRate);
+        sampleRateSelector.removeEventListener("change", onChangedSampleRate);
         frequencyRangeSelector.removeEventListener("change", onChangedFrequencyRange);
         frequencyTableSizeSelector.removeEventListener("change", onChangedFrequencyTableSize);
         compressButton.removeEventListener("click", onClickedCompressButton);
@@ -117,10 +117,10 @@
     }
 
     // サンプルレートが変更
-    function onChangedSamplingRate(event) {
+    function onChangedSampleRate(event) {
         let value = this.options[this.selectedIndex].value;
-        console.log(`Changed the sample rate from ${samplingRate} to ${value}.`);
-        samplingRate = Number.parseFloat(value);
+        console.log(`Changed the sample rate from ${sampleRate} to ${value}.`);
+        sampleRate = Number.parseFloat(value);
         updateBitRateOfCompressedAudio();
     }
 
@@ -176,7 +176,7 @@
                 Math.ceil(Math.ceil(Math.log2(frequencyUpperLimit)) * frequencyTableSize / 32) * 32)
                 + 4 * frequencyTableSize)
             * channelSize;
-        compressedBitRateLabel.textContent = `${Math.round(frameSize * samplingRate / frequencyRange / 1000)} kbps`;
+        compressedBitRateLabel.textContent = `${Math.round(frameSize * sampleRate / frequencyRange / 1000)} kbps`;
     }
 
     // 圧縮ボタンがクリックされた
@@ -242,12 +242,12 @@
                 }
             });
             worker.postMessage({
-                "channelSize": channelSize,
-                "samplingRate": samplingRate,
+                "numChannels": channelSize,
+                "sampleRate": sampleRate,
                 "frequencyRange": frequencyRange,
                 "frequencyUpperLimit": frequencyUpperLimit,
                 "frequencyTableSize": frequencyTableSize,
-                "originalSamplingRate": audioBuffer.sampleRate,
+                "originalSampleRate": audioBuffer.sampleRate,
                 "originalChannelSize": audioBuffer.numberOfChannels,
                 "originalSampleData": sampleData
             }, sampleData.map((value => value.buffer)));
@@ -260,7 +260,7 @@
         downloadButton.href = window.URL.createObjectURL(blob);
         downloadButton.download = `${(originalFile.name.indexOf(".") != -1 ?
             originalFile.name.substring(0, originalFile.name.indexOf(".")) :
-            originalFile.name)}.wac`;
+            originalFile.name)}.orp`;
         downloadButton.style.visibility = "visible";
     }
 
@@ -294,7 +294,7 @@
     ];
 
     // デフォルト、サンプリングレート
-    const DEFAULT_SAMPLING_RATE = 48000;
+    const DEFAULT_SAMPLE_RATE = 48000;
     // デフォルト、チャネル数
     const DEFAULT_CHANNEL_SIZE = 2;
     // デフォルト、周波数レンジ
@@ -305,7 +305,7 @@
     const DEFAULT_FREQUENCY_TABLE_SIZE = 192;
 
     // サンプリングレート
-    let samplingRate = DEFAULT_SAMPLING_RATE;
+    let sampleRate = DEFAULT_SAMPLE_RATE;
     // チャネル数
     let channelSize = DEFAULT_CHANNEL_SIZE;
     // 周波数レンジ
@@ -356,8 +356,8 @@
     function makeCompressedAudioNode(buffer) {
         let decoder = new wamCodec.WamDcoder(buffer);
         terminateAudio();
-        initializeAudio(decoder.samplingRate);
-        compressedAudioNode = audioContext.createScriptProcessor(4096, decoder.channelSize, decoder.channelSize);
+        initializeAudio(decoder.sampleRate);
+        compressedAudioNode = audioContext.createScriptProcessor(4096, decoder.numChannels, decoder.numChannels);
         compressedAudioNode.addEventListener("audioprocess", (event) => {
             let sampleData = new Array(event.outputBuffer.numberOfChannels);
             for (let i = 0; i < sampleData.length; ++i) {
@@ -365,13 +365,13 @@
             }
 
             // デコード
-            let sampleTimes = audioContext.sampleRate / decoder.samplingRate;
+            let sampleTimes = audioContext.sampleRate / decoder.sampleRate;
             let sampleCount = Math.floor(event.outputBuffer.length / sampleTimes);
             decoder.read(sampleData, 0, sampleCount);
 
             // AudioContextとサンプリングレートが合わない場合は修正
             if (sampleTimes > 1) {
-                for (let i = 0; i < decoder.channelSize; ++i) {
+                for (let i = 0; i < decoder.numChannels; ++i) {
                     let samples = sampleData[i];
                     for (let j = sampleCount - 1; j >= 0; --j) {
                         let sample = samples[j];
@@ -405,7 +405,6 @@
         if (!isPlayAudio()) {
             return;
         }
-        audioSource.stop();
         compressedAudioNode.disconnect(audioContext.destination);
         audioSource.disconnect(compressedAudioNode);
         audioSource = null;

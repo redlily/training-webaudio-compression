@@ -29,7 +29,7 @@ https://redlily.github.io/training-webaudio-compression
 |DATA_SIZE|UINT32|データのバイトサイズ|
 |DATA_TYPE|UINT32|拡張用のデータタイプ、"SMD0"が固定値|
 |VERSION|UINT32|データのバージョン|
-|SAMPLING_RATE|UINT32|サンプリングレート|
+|SAMPLE_RATE|UINT32|サンプリングレート|
 |CHANNEL_SIZE|UINT32|チャネル数、1がモノラル、2がステレオ|
 |SAMPLE_COUNT|UINT32|データに含まれるサンプル数|
 |FREQUENCY_RANGE|UINT16|周波数ブロックのサイズ|
@@ -45,5 +45,5 @@ https://redlily.github.io/training-webaudio-compression
 |:---|:---|:---|
 |MASTER_SCALE|UINT32|このフーレムの主音量|
 |SUB_SCALES|UINT4[8]|8つの周波数帯用の音量を調整するためのスケール値|
-|ENABLE_FREQUENCIES|1bit[FREQUENCY_UPPER_LIMIT]<br>or<br>ceil(log_2(FREQUENCY_UPPER_LIMIT))bit<br>[FREQUENCY_UPPER_LIMIT]|周波数の有効無効を収納した1bitのフラグ配列、もしくは有効な周波数のインデックスを収納した配列<br>バイト数の小さい方を使用し4バイトアライメントに適合するサイズにする|
+|ENABLE_FREQUENCIES|1bit[FREQUENCY_UPPER_LIMIT]<br>or<br>ceil(log_2(FREQUENCY_UPPER_LIMIT))bit[FREQUENCY_TABLE_SIZE]|周波数の有効無効を収納した1bitのフラグ配列、もしくは有効な周波数のインデックスを収納した配列<br>バイト数の小さい方を使用し4バイトアライメントに適合するサイズにする|
 |FREQUENCY_VALUES|4bit[FREQUENCY_TABLE_SIZE]|有効な周波数の対数で符号化された数値|
